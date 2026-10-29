@@ -52,6 +52,7 @@ class SpatialJson(BaseModel):
 
 class TrailItem(BaseModel):
     frame_id: str
+    frame_url: str | None = None
     ts: float | None = None
     bbox: list[float] | None = None
     score: float | None = None
@@ -66,3 +67,4 @@ class QueryResponse(BaseModel):
     query: str | None = None
     frame_path: str | None = None
     frame_id: str | None = None
+    frame_url: str | None = None

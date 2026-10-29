@@ -1,7 +1,7 @@
 """Unified env loading and pipeline thresholds.
 
-`SPATIALTRACE_MODE=mock|live` is the only switch between fixture providers
-and live HTTP stubs. `OFFLINE_SNAPSHOTS` is reserved for Stage 3 replay JSON.
+`SPATIALTRACE_MODE=mock|live` selects fixture or live Responses providers.
+`OFFLINE_SNAPSHOTS=1` replays recorded query JSON without provider calls.
 """
 
 from __future__ import annotations
@@ -51,8 +51,8 @@ class Settings(BaseModel):
     model_api_key: str = ""
     sam_base_url: str = "https://api.meta.ai/v1"
     sam_model_name: str = "sam-3.1"
-    vlm_model_name: str = "muse-spark"
-    llm_model_name: str = "muse-spark"
+    vlm_model_name: str = "muse-spark-1.3"
+    llm_model_name: str = "muse-spark-1.3"
     data_dir: Path = Field(default_factory=lambda: BACKEND_DIR / "data")
 
     settle_spike_threshold: float = 500_000.0
@@ -96,8 +96,8 @@ def load_settings() -> Settings:
         model_api_key=_env("MODEL_API_KEY", "") or "",
         sam_base_url=_env("SAM_BASE_URL", "https://api.meta.ai/v1") or "https://api.meta.ai/v1",
         sam_model_name=_env("SAM_MODEL_NAME", "sam-3.1") or "sam-3.1",
-        vlm_model_name=_env("VLM_MODEL_NAME", "muse-spark") or "muse-spark",
-        llm_model_name=_env("LLM_MODEL_NAME", "muse-spark") or "muse-spark",
+        vlm_model_name=_env("VLM_MODEL_NAME", "muse-spark-1.3") or "muse-spark-1.3",
+        llm_model_name=_env("LLM_MODEL_NAME", "muse-spark-1.3") or "muse-spark-1.3",
         data_dir=Path(data_dir_raw) if data_dir_raw else BACKEND_DIR / "data",
         settle_spike_threshold=_env_float("SETTLE_SPIKE_THRESHOLD", 500_000.0),
         settle_calm_threshold=_env_float("SETTLE_CALM_THRESHOLD", 100_000.0),

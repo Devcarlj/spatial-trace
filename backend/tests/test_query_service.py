@@ -61,4 +61,24 @@ def test_query_returns_unsure_when_index_has_no_match(isolated_env):
 
     assert result.state == "UNSURE"
     assert result.trail == []
-    assert retrieve_frames("mug") == []
+    assert len(retrieve_frames("mug")) == 1  # recall fallback still visually rejects the item
+
+
+def test_movement_never_compares_unrelated_clips(isolated_env):
+    _insert_frame("frame-old", 1.0, "desk_frame_01.jpg", ["reading glasses"])
+    _insert_frame("frame-new", 2.0, "desk_frame_moved.jpg", ["reading glasses"])
+    conn = sqlite3.connect(get_settings().db_path)
+    conn.execute("UPDATE frames SET clip_id='other-clip' WHERE id='frame-new'")
+    conn.commit()
+    conn.close()
+    result = query_memory("where are my specs")
+    assert result.state == "FOUND_NOW"
+    assert len(result.trail) == 1
+
+
+def test_possible_match_includes_evidence(isolated_env):
+    _insert_frame("maybe-mug", 1.0, "desk_frame_unsure.jpg", ["mug"])
+    result = query_memory("mug")
+    assert result.state == "UNSURE"
+    assert result.bbox
+    assert result.frame_id == "maybe-mug"

@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import uuid
+import hashlib
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
@@ -52,8 +55,10 @@ def retrieve_frames(normalized_query: str, limit: int | None = None) -> list[Ind
     conn.row_factory = sqlite3.Row
     try:
         rows = conn.execute(
-            f"SELECT * FROM frames WHERE {clauses} ORDER BY ts DESC, created_at DESC LIMIT ?", params
+            f"SELECT * FROM frames WHERE {clauses} ORDER BY created_at DESC, ts DESC LIMIT ?", params
         ).fetchall()
+        if not rows:
+            rows = conn.execute("SELECT * FROM frames ORDER BY created_at DESC, ts DESC LIMIT ?", (limit,)).fetchall()
     finally:
         conn.close()
     return [_row_to_frame(row) for row in rows]
@@ -83,6 +88,21 @@ def _has_moved(trail: list[TrailItem]) -> bool:
 
 
 def query_memory(query: str) -> QueryResponse:
+    """Replay explicit offline snapshots; otherwise save successful responses."""
+    settings = get_settings()
+    key = hashlib.sha256(query.strip().lower().encode()).hexdigest()
+    path = settings.data_dir / "snapshots" / f"{key}.json"
+    if settings.offline_snapshots:
+        if not path.is_file():
+            return QueryResponse(state="UNSURE", answer="No recorded offline result for this query.", query=query)
+        return QueryResponse.model_validate_json(path.read_text(encoding="utf-8"))
+    result = _query_memory(query)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(result.model_dump_json(), encoding="utf-8")
+    return result
+
+
+def _query_memory(query: str) -> QueryResponse:
     """Resolve a natural-language item query against the indexed video history."""
     original_query = query.strip()
     if not original_query:
@@ -105,14 +125,24 @@ def query_memory(query: str) -> QueryResponse:
 
     high_confidence = [item for item in verified if item[1] >= settings.sam_score_high and item[2]]
     if not high_confidence:
+        possible = [item for item in verified if item[1] >= settings.sam_score_mid and item[2]]
+        if possible:
+            frame, score, box, mask = possible[0]
+            return QueryResponse(state="UNSURE", query=original_query,
+                                 answer=f"Possible match for {normalized}; I cannot verify it confidently.",
+                                 frame_id=frame.id, frame_path=frame.frame_path, bbox=box, mask=mask,
+                                 trail=[TrailItem(frame_id=frame.id, ts=frame.timestamp, bbox=box, score=score)])
         return QueryResponse(
             state="UNSURE",
             answer=f"I found possible mentions of {normalized}, but could not verify it in the saved frames.",
             query=original_query,
         )
 
+    # Clip-relative seconds cannot establish ordering between unrelated clips.
+    newest_clip = high_confidence[0][0].clip_id
+    high_confidence = [item for item in high_confidence if item[0].clip_id == newest_clip]
     high_confidence.sort(key=lambda item: item[0].timestamp)
-    trail = [TrailItem(frame_id=frame.id, ts=frame.timestamp, bbox=box, score=score) for frame, score, box, _ in high_confidence]
+    trail = [TrailItem(frame_id=frame.id, ts=frame.timestamp, bbox=box, score=score) for frame, score, box, _ in high_confidence[-3:]]
     latest_frame, latest_score, latest_box, latest_mask = high_confidence[-1]
     moved = _has_moved(trail)
     state = "MOVED" if moved else "FOUND_NOW"
@@ -120,6 +150,19 @@ def query_memory(query: str) -> QueryResponse:
         answer = f"{normalized.title()} appears to have moved; its latest indexed location is in the most recent matching frame."
     else:
         answer = f"{normalized.title()} was found in the latest matching indexed frame."
+    spatial = client.describe_spatial(latest_frame.frame_path, normalized)
+    answer += f" On {spatial.surface}, {spatial.anchor}. Visibility: {spatial.visibility}."
+    conn = sqlite3.connect(get_db_path())
+    try:
+        for frame, score, box, mask in high_confidence[-3:]:
+            exists = conn.execute("SELECT id FROM sightings WHERE frame_id=? AND query_label=?",
+                                  (frame.id, normalized)).fetchone()
+            if not exists:
+                conn.execute("INSERT INTO sightings (id,frame_id,query_label,bbox,mask_path,score,spatial_json) VALUES (?,?,?,?,?,?,?)",
+                             (str(uuid.uuid4()), frame.id, normalized, json.dumps(box), mask, score, spatial.model_dump_json()))
+        conn.commit()
+    finally:
+        conn.close()
     return QueryResponse(
         state=state,
         bbox=latest_box,

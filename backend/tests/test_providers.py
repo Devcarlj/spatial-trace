@@ -103,14 +103,20 @@ def test_live_sam_fails_closed_on_401(isolated_env, monkeypatch):
     class FakeResponse:
         status_code = 401
         text = "unauthorized"
+        def __enter__(self):
+            return self
+        def __exit__(self, *_args):
+            pass
 
     def fake_post(*_args, **_kwargs):
         return FakeResponse()
 
     monkeypatch.setattr(requests, "post", fake_post)
     provider = LiveSamProvider(settings)
+    image = isolated_env / "frame.jpg"
+    image.write_bytes(b"image")
     with pytest.raises(ProviderUnavailable, match="401"):
-        provider.segment("frame.jpg", "keys")
+        provider.segment(str(image), "keys")
 
 
 def test_query_response_contract():

@@ -13,7 +13,14 @@ from database import init_db
 
 
 def cache_key(endpoint: str, payload: Any) -> str:
-    blob = json.dumps({"endpoint": endpoint, "payload": payload}, sort_keys=True, default=str)
+    settings = get_settings()
+    images = {key: hashlib.sha256(Path(value).read_bytes()).hexdigest()
+              for key, value in payload.items()
+              if key in {"image_path", "crop_path"} and Path(value).is_file()} if isinstance(payload, dict) else {}
+    blob = json.dumps({"endpoint": endpoint, "payload": payload, "images": images,
+                       "mode": settings.spatialtrace_mode, "base": settings.sam_base_url,
+                       "models": [settings.sam_model_name, settings.vlm_model_name, settings.llm_model_name],
+                       "version": 2}, sort_keys=True, default=str)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 

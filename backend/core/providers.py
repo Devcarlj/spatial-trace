@@ -1,30 +1,25 @@
-"""Model I/O: interfaces, mock fixtures, fail-closed live stubs, cached client."""
+"""Model I/O: fixture providers and documented Meta Responses adapters."""
 
 from __future__ import annotations
 
 import json
-import base64
 from abc import ABC, abstractmethod
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-import requests
 from pydantic import ValidationError
 
 from core.cache import cached_call
 from core.contracts import QueryResponse, SamResponse, SpatialJson, VlmIndexOutput
 from core.settings import Settings, get_settings
+from core.live_transport import ProviderUnavailable, responses, parse_json, parse_segmentation
 
 SYNONYM_MAP = {
     "specs": "reading glasses",
     "glasses": "reading glasses",
     "shades": "black sunglasses",
 }
-
-
-class ProviderUnavailable(RuntimeError):
-    """Live provider refused to call the network (missing key, 401, or similar)."""
 
 
 class SamProvider(ABC):
@@ -148,23 +143,9 @@ class LiveSamProvider(SamProvider):
         self.settings = settings
 
     def segment(self, image_path: str, noun_phrase: str) -> dict[str, Any]:
-        _require_live_key(self.settings)
-        url = f"{self.settings.sam_base_url.rstrip('/')}/segment"
-        try:
-            response = requests.post(
-                url,
-                headers=_auth_headers(self.settings),
-                json={
-                    "model": self.settings.sam_model_name,
-                    "image_path": image_path,
-                    "prompt": noun_phrase,
-                },
-                timeout=30,
-            )
-        except requests.RequestException as exc:
-            raise ProviderUnavailable(f"Live SAM request failed closed: {exc}") from exc
-        _raise_if_blocked(response, "SAM")
-        return SamResponse.model_validate(response.json()).model_dump()
+        return parse_segmentation(responses(self.settings, self.settings.sam_model_name,
+                                            noun_phrase, image_path, segmentation=True))
+
 
 
 class LiveVlmProvider(VlmProvider):
@@ -172,54 +153,10 @@ class LiveVlmProvider(VlmProvider):
         self.settings = settings
 
     def describe_crop(self, crop_path: str) -> str:
-        _require_live_key(self.settings)
-        image = Path(crop_path)
-        if not image.is_file():
-            raise ProviderUnavailable(f"VLM crop does not exist: {crop_path}")
+        return responses(self.settings, self.settings.vlm_model_name,
+                         'Identify visible objects. Return only JSON: {"objects": [string], "caption": string}.',
+                         crop_path)
 
-        mime_type = "image/png" if image.suffix.lower() == ".png" else "image/jpeg"
-        image_data = base64.b64encode(image.read_bytes()).decode("ascii")
-        url = f"{self.settings.sam_base_url.rstrip('/')}/responses"
-        payload = {
-            "model": self.settings.vlm_model_name,
-            "input": [
-                {
-                    "type": "message",
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "input_text",
-                            "text": (
-                                "Identify the visible objects in this image crop. Return only "
-                                "JSON matching this schema: {\\\"objects\\\": [string], "
-                                "\\\"caption\\\": string}."
-                            ),
-                        },
-                        {
-                            "type": "input_image",
-                            "image_url": f"data:{mime_type};base64,{image_data}",
-                        },
-                    ],
-                }
-            ],
-            "max_output_tokens": 256,
-            "store": False,
-            "stream": False,
-        }
-        try:
-            response = requests.post(
-                url,
-                headers=_auth_headers(self.settings),
-                json=payload,
-                timeout=60,
-            )
-        except requests.RequestException as exc:
-            raise ProviderUnavailable(f"Live VLM request failed closed: {exc}") from exc
-        _raise_if_blocked(response, "VLM")
-        result = response.json()
-        if result.get("error") or result.get("status") not in {None, "completed"}:
-            raise ProviderUnavailable("Live VLM response did not complete successfully.")
-        return _response_output_text(result)
 
 
 class LiveLlmProvider(LlmProvider):
@@ -227,68 +164,20 @@ class LiveLlmProvider(LlmProvider):
         self.settings = settings
 
     def normalize_query(self, query: str) -> str:
-        data = self._post("/llm/normalize", {"query": query, "model": self.settings.llm_model_name})
-        return str(data.get("normalized", query))
+        text = responses(self.settings, self.settings.llm_model_name,
+                         'Extract the single object noun phrase being sought. Expand synonyms. '
+                         'Return only JSON {"normalized": string}. Query: ' + query)
+        normalized = parse_json(text).get("normalized", "").strip()
+        if not normalized:
+            raise ProviderUnavailable("Normalizer returned an empty object phrase.")
+        return normalized
 
     def describe_spatial(self, crop_path: str, noun_phrase: str) -> dict[str, Any]:
-        data = self._post(
-            "/llm/spatial",
-            {
-                "crop_path": crop_path,
-                "noun": noun_phrase,
-                "model": self.settings.llm_model_name,
-            },
-        )
+        data = parse_json(responses(self.settings, self.settings.llm_model_name,
+                         'Describe the visible location of ' + noun_phrase +
+                         '. Return only JSON with string fields surface, anchor, visibility.', crop_path))
         return SpatialJson.model_validate(data).model_dump()
 
-    def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
-        _require_live_key(self.settings)
-        url = f"{self.settings.sam_base_url.rstrip('/')}{path}"
-        try:
-            response = requests.post(
-                url,
-                headers=_auth_headers(self.settings),
-                json=payload,
-                timeout=30,
-            )
-        except requests.RequestException as exc:
-            raise ProviderUnavailable(f"Live LLM request failed closed: {exc}") from exc
-        _raise_if_blocked(response, "LLM")
-        return response.json()
-
-
-def _auth_headers(settings: Settings) -> dict[str, str]:
-    return {
-        "Authorization": f"Bearer {settings.model_api_key}",
-        "Content-Type": "application/json",
-    }
-
-
-def _require_live_key(settings: Settings) -> None:
-    if not settings.live_key_ready:
-        raise ProviderUnavailable(
-            "Live APIs fail closed: set a real MODEL_API_KEY (not the placeholder)."
-        )
-
-
-def _raise_if_blocked(response: requests.Response, label: str) -> None:
-    if response.status_code == 401:
-        raise ProviderUnavailable(
-            f"Live {label} blocked (401). Keep SPATIALTRACE_MODE=mock until the portal key works."
-        )
-    if response.status_code >= 400:
-        raise ProviderUnavailable(
-            f"Live {label} failed closed with HTTP {response.status_code}."
-        )
-
-
-def _response_output_text(response: dict[str, Any]) -> str:
-    """Extract the first text item from a Meta/OpenAI-compatible response."""
-    for item in response.get("output", []):
-        for content in item.get("content", []):
-            if content.get("type") in {"output_text", "text"} and content.get("text"):
-                return str(content["text"])
-    raise ProviderUnavailable("Live VLM response contained no text output.")
 
 
 def build_providers(settings: Settings | None = None) -> tuple[SamProvider, VlmProvider, LlmProvider]:
@@ -326,7 +215,7 @@ class ModelClient:
             for _ in range(2):
                 raw = self.vlm.describe_crop(crop_path)
                 try:
-                    parsed = json.loads(raw)
+                    parsed = parse_json(raw)
                     return VlmIndexOutput.model_validate(parsed).model_dump()
                 except (json.JSONDecodeError, ValidationError, TypeError, ValueError) as exc:
                     last_error = exc

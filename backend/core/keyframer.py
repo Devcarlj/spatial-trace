@@ -127,4 +127,18 @@ def process_video(video_path: str | Path, clip_id: str) -> list[dict[str, Any]]:
             frame_count += 1
     finally:
         cap.release()
+    # Moving-camera/short clips may never meet the settle window. Keep an
+    # honest full-frame observation rather than returning a silent empty index.
+    if not indexed and prev_full_frame is not None:
+        height, width = prev_full_frame.shape[:2]
+        frame_path = output_dir / "frame_fallback.jpg"
+        if not cv2.imwrite(str(frame_path), prev_full_frame):
+            raise OSError("Could not save fallback frame")
+        timestamp = max(0, frame_count - 1) / fps
+        bbox = [0, 0, width, height]
+        frame_id = index_settled_frame(safe_clip_id, timestamp, str(frame_path), str(frame_path), bbox)
+        indexed.append({"frame_id": frame_id, "timestamp": timestamp,
+                        "frame_path": str(frame_path), "crop_path": str(frame_path), "diff_bbox": bbox})
+    if prev_full_frame is None:
+        raise ValueError("Video contains no decodable frames")
     return indexed
