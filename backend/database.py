@@ -51,6 +51,8 @@ def init_db(db_path: str | Path | None = None):
         )
     ''')
 
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_frames_clip_ts ON frames (clip_id, ts)')
+
     conn.commit()
     conn.close()
 

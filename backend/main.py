@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 from database import init_db
@@ -30,8 +31,20 @@ async def index_video(req: IndexRequest):
     """
     Triggers the Index Time pipeline: Frame Sampler -> Settle Detector -> Region Diff -> VLM -> SQLite[cite: 1].
     """
-    # TODO (Days 2-3): Connect this to core.keyframer.process_video and core.vlm_client
-    return {"status": "processing", "clip_id": req.clip_id, "message": "Indexing started."}
+    from core.keyframer import process_video
+
+    try:
+        frames = await run_in_threadpool(process_video, req.video_path, req.clip_id)
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Indexing failed: {exc}") from exc
+    return {
+        "status": "completed",
+        "clip_id": req.clip_id,
+        "indexed_frame_count": len(frames),
+        "frames": frames,
+    }
 
 @app.post("/api/query")
 async def query_memory(req: QueryRequest):

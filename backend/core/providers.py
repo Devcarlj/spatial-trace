@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import base64
 from abc import ABC, abstractmethod
 from functools import lru_cache
 from pathlib import Path
@@ -172,20 +173,53 @@ class LiveVlmProvider(VlmProvider):
 
     def describe_crop(self, crop_path: str) -> str:
         _require_live_key(self.settings)
-        url = f"{self.settings.sam_base_url.rstrip('/')}/vlm"
+        image = Path(crop_path)
+        if not image.is_file():
+            raise ProviderUnavailable(f"VLM crop does not exist: {crop_path}")
+
+        mime_type = "image/png" if image.suffix.lower() == ".png" else "image/jpeg"
+        image_data = base64.b64encode(image.read_bytes()).decode("ascii")
+        url = f"{self.settings.sam_base_url.rstrip('/')}/responses"
+        payload = {
+            "model": self.settings.vlm_model_name,
+            "input": [
+                {
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": (
+                                "Identify the visible objects in this image crop. Return only "
+                                "JSON matching this schema: {\\\"objects\\\": [string], "
+                                "\\\"caption\\\": string}."
+                            ),
+                        },
+                        {
+                            "type": "input_image",
+                            "image_url": f"data:{mime_type};base64,{image_data}",
+                        },
+                    ],
+                }
+            ],
+            "max_output_tokens": 256,
+            "store": False,
+            "stream": False,
+        }
         try:
             response = requests.post(
                 url,
                 headers=_auth_headers(self.settings),
-                json={"model": self.settings.vlm_model_name, "crop_path": crop_path},
-                timeout=30,
+                json=payload,
+                timeout=60,
             )
         except requests.RequestException as exc:
             raise ProviderUnavailable(f"Live VLM request failed closed: {exc}") from exc
         _raise_if_blocked(response, "VLM")
-        if response.headers.get("content-type", "").startswith("application/json"):
-            return json.dumps(response.json())
-        return response.text
+        result = response.json()
+        if result.get("error") or result.get("status") not in {None, "completed"}:
+            raise ProviderUnavailable("Live VLM response did not complete successfully.")
+        return _response_output_text(result)
 
 
 class LiveLlmProvider(LlmProvider):
@@ -246,6 +280,15 @@ def _raise_if_blocked(response: requests.Response, label: str) -> None:
         raise ProviderUnavailable(
             f"Live {label} failed closed with HTTP {response.status_code}."
         )
+
+
+def _response_output_text(response: dict[str, Any]) -> str:
+    """Extract the first text item from a Meta/OpenAI-compatible response."""
+    for item in response.get("output", []):
+        for content in item.get("content", []):
+            if content.get("type") in {"output_text", "text"} and content.get("text"):
+                return str(content["text"])
+    raise ProviderUnavailable("Live VLM response contained no text output.")
 
 
 def build_providers(settings: Settings | None = None) -> tuple[SamProvider, VlmProvider, LlmProvider]:

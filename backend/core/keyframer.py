@@ -1,114 +1,130 @@
+"""Extract and index meaningful settled frames from a recorded clip."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
 import cv2
 import numpy as np
-import os
 
-def compute_diff(prev_frame, curr_frame):
-    # Compute frame-diff on downscaled grayscale
+from core.settings import get_settings
+
+
+def compute_diff(prev_frame: np.ndarray, curr_frame: np.ndarray) -> tuple[float, np.ndarray]:
+    """Return a motion score and image difference for equally sized gray frames."""
     diff = cv2.absdiff(prev_frame, curr_frame)
-    score = np.sum(diff)
-    return score, diff
+    return float(np.sum(diff)), diff
 
-def get_region_diff_bbox(pre_motion_frame, post_settle_frame):
-    """
-    Compares pre-motion and post-settle frames to get a changed-area bbox.
-    """
+
+def get_region_diff_bbox(
+    pre_motion_frame: np.ndarray,
+    post_settle_frame: np.ndarray,
+    min_diff_area: int,
+) -> list[int] | None:
+    """Return ``[x, y, width, height]`` for the largest meaningful change."""
     gray1 = cv2.cvtColor(pre_motion_frame, cv2.COLOR_BGR2GRAY)
     gray2 = cv2.cvtColor(post_settle_frame, cv2.COLOR_BGR2GRAY)
-    
-    # Gaussian blur to reduce noise
     gray1 = cv2.GaussianBlur(gray1, (21, 21), 0)
     gray2 = cv2.GaussianBlur(gray2, (21, 21), 0)
-    
     diff = cv2.absdiff(gray1, gray2)
     _, thresh = cv2.threshold(diff, 25, 255, cv2.THRESH_BINARY)
     thresh = cv2.dilate(thresh, None, iterations=2)
-    
-    contours, _ = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
         return None
-        
-    # Find the largest contour which represents the biggest change
-    largest_contour = max(contours, key=cv2.contourArea)
-    if cv2.contourArea(largest_contour) < 500: # Ignore tiny changes
+    largest = max(contours, key=cv2.contourArea)
+    if cv2.contourArea(largest) < min_diff_area:
         return None
-        
-    x, y, w, h = cv2.boundingRect(largest_contour)
-    return [x, y, w, h] # diff_bbox
+    x, y, width, height = cv2.boundingRect(largest)
+    return [int(x), int(y), int(width), int(height)]
 
-def process_video(video_path, clip_id):
-    os.makedirs(f"data/frames/{clip_id}", exist_ok=True)
-    
-    cap = cv2.VideoCapture(video_path)
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    
-    # Target 2-4 FPS
-    frame_skip = int(fps // 3) 
-    
-    prev_gray_small = None
-    pre_motion_full_frame = None
-    
+
+def _safe_clip_id(clip_id: str) -> str:
+    if not clip_id or Path(clip_id).name != clip_id or clip_id in {".", ".."}:
+        raise ValueError("clip_id must be a simple directory name")
+    return clip_id
+
+
+def process_video(video_path: str | Path, clip_id: str) -> list[dict[str, Any]]:
+    """Index each post-motion settled region and return its persisted metadata."""
+    from core.vlm_client import index_settled_frame
+
+    settings = get_settings()
+    source = Path(video_path)
+    if not source.is_file():
+        raise FileNotFoundError(f"Video does not exist: {source}")
+    safe_clip_id = _safe_clip_id(clip_id)
+    output_dir = settings.data_dir / "frames" / safe_clip_id
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    cap = cv2.VideoCapture(str(source))
+    if not cap.isOpened():
+        raise ValueError(f"Unable to read video: {source}")
+
+    fps = cap.get(cv2.CAP_PROP_FPS) or 3.0
+    frame_skip = max(1, round(fps / 3))
+    prev_gray_small: np.ndarray | None = None
+    prev_full_frame: np.ndarray | None = None
+    pre_motion_full_frame: np.ndarray | None = None
     motion_spike = False
     calm_frames = 0
-    calm_threshold = 3 * 2 # ~2 seconds at 3 FPS
-    
+    indexed: list[dict[str, Any]] = []
     frame_count = 0
-    
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break
-            
-        if frame_count % frame_skip == 0:
-            # Downscaled copy for diffing
-            small_frame = cv2.resize(frame, (640, 360))
-            gray_small = cv2.cvtColor(small_frame, cv2.COLOR_BGR2GRAY)
-            
-            if prev_gray_small is not None:
+
+    try:
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            if frame_count % frame_skip != 0:
+                frame_count += 1
+                continue
+
+            small = cv2.resize(frame, (640, 360))
+            gray_small = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+            if prev_gray_small is not None and prev_full_frame is not None:
                 diff_score, _ = compute_diff(prev_gray_small, gray_small)
-                
-                # Settle detection logic
-                if diff_score > 500000: # Arbitrary spike threshold, needs tuning per clip[cite: 1]
+                if diff_score > settings.settle_spike_threshold:
                     if not motion_spike:
-                        # Capture the frame right before motion started
-                        pre_motion_full_frame = prev_full_frame 
+                        pre_motion_full_frame = prev_full_frame
                     motion_spike = True
                     calm_frames = 0
-                elif motion_spike and diff_score < 100000:
+                elif motion_spike and diff_score < settings.settle_calm_threshold:
                     calm_frames += 1
-                    
-                if motion_spike and calm_frames >= calm_threshold:
-                    timestamp = frame_count / fps
-                    print(f"Settled keyframe detected at {timestamp:.2f}s")
-                    
-                    if pre_motion_full_frame is not None:
-                        bbox = get_region_diff_bbox(pre_motion_full_frame, frame)
-                        
-                        if bbox:
-                            # Save full-res keyframe and crop[cite: 1]
-                            x, y, w, h = bbox
-                            crop = frame[y:y+h, x:x+w]
-                            
-                            frame_path = f"data/frames/{clip_id}/frame_{frame_count}.jpg"
-                            crop_path = f"data/frames/{clip_id}/crop_{frame_count}.jpg"
-                            
-                            cv2.imwrite(frame_path, frame)
-                            cv2.imwrite(crop_path, crop)
-                            
-                            print(f"Saved region diff crop. Bbox: {bbox}")
-                            # TODO for Days 2-3: Send to VLM and index to SQLite
-                            
-                    motion_spike = False 
+
+                if motion_spike and calm_frames >= settings.settle_calm_frames:
+                    bbox = (
+                        get_region_diff_bbox(pre_motion_full_frame, frame, settings.min_diff_area)
+                        if pre_motion_full_frame is not None
+                        else None
+                    )
+                    if bbox:
+                        x, y, width, height = bbox
+                        crop = frame[y : y + height, x : x + width]
+                        timestamp = frame_count / fps
+                        frame_path = output_dir / f"frame_{frame_count}.jpg"
+                        crop_path = output_dir / f"crop_{frame_count}.jpg"
+                        if not cv2.imwrite(str(frame_path), frame) or not cv2.imwrite(str(crop_path), crop):
+                            raise OSError("Could not write detected keyframe files")
+                        frame_id = index_settled_frame(
+                            safe_clip_id, timestamp, str(frame_path), str(crop_path), bbox
+                        )
+                        indexed.append(
+                            {
+                                "frame_id": frame_id,
+                                "timestamp": timestamp,
+                                "frame_path": str(frame_path),
+                                "crop_path": str(crop_path),
+                                "diff_bbox": bbox,
+                            }
+                        )
+                    motion_spike = False
                     calm_frames = 0
-            
+
             prev_gray_small = gray_small
             prev_full_frame = frame.copy()
-            
-        frame_count += 1
-
-    cap.release()
-
-if __name__ == "__main__":
-    # Example usage once you record your clips
-    # process_video("data/clips/desk_scripted.mp4", "clip_desk_01")
-    pass
+            frame_count += 1
+    finally:
+        cap.release()
+    return indexed

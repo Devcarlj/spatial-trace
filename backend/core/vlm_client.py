@@ -3,7 +3,7 @@ import sqlite3
 import uuid
 
 from core.providers import get_model_client
-from database import get_db_path
+from database import get_db_path, init_db
 
 
 def call_cheap_vlm(crop_path):
@@ -21,6 +21,7 @@ def index_settled_frame(clip_id, timestamp, frame_path, crop_path, diff_bbox):
     vlm_result = call_cheap_vlm(crop_path)
 
     db_path = get_db_path()
+    init_db(db_path)
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 

@@ -51,7 +51,7 @@ class Settings(BaseModel):
     model_api_key: str = ""
     sam_base_url: str = "https://api.meta.ai/v1"
     sam_model_name: str = "sam-3.1"
-    vlm_model_name: str = "cheap-vlm"
+    vlm_model_name: str = "muse-spark"
     llm_model_name: str = "muse-spark"
     data_dir: Path = Field(default_factory=lambda: BACKEND_DIR / "data")
 
@@ -96,7 +96,7 @@ def load_settings() -> Settings:
         model_api_key=_env("MODEL_API_KEY", "") or "",
         sam_base_url=_env("SAM_BASE_URL", "https://api.meta.ai/v1") or "https://api.meta.ai/v1",
         sam_model_name=_env("SAM_MODEL_NAME", "sam-3.1") or "sam-3.1",
-        vlm_model_name=_env("VLM_MODEL_NAME", "cheap-vlm") or "cheap-vlm",
+        vlm_model_name=_env("VLM_MODEL_NAME", "muse-spark") or "muse-spark",
         llm_model_name=_env("LLM_MODEL_NAME", "muse-spark") or "muse-spark",
         data_dir=Path(data_dir_raw) if data_dir_raw else BACKEND_DIR / "data",
         settle_spike_threshold=_env_float("SETTLE_SPIKE_THRESHOLD", 500_000.0),
