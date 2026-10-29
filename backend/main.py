@@ -1,5 +1,4 @@
 from fastapi import FastAPI, HTTPException
-from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 from database import init_db
@@ -34,7 +33,7 @@ async def index_video(req: IndexRequest):
     from core.keyframer import process_video
 
     try:
-        frames = await run_in_threadpool(process_video, req.video_path, req.clip_id)
+        frames = process_video(req.video_path, req.clip_id)
     except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
@@ -48,15 +47,13 @@ async def index_video(req: IndexRequest):
 
 @app.post("/api/query")
 async def query_memory(req: QueryRequest):
-    """
-    Triggers the Query Time pipeline: LLM Normalizer -> SQLite Text Match -> SAM 3.1 -> Spatial LLM -> UI State[cite: 1].
-    """
-    # TODO (Days 2-3): Connect to query normalizer, SQLite search, and SAM client
-    return {
-        "query": req.query,
-        "state": "UNSURE", # Placeholder for FOUND_NOW, MOVED, or UNSURE[cite: 1]
-        "message": "Query endpoint scaffolded."
-    }
+    """Search indexed clips and visually verify the requested item."""
+    from core.query_service import query_memory as run_query
+
+    try:
+        return run_query(req.query)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Query failed: {exc}") from exc
 
 if __name__ == "__main__":
     import uvicorn
