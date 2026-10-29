@@ -1,47 +1,32 @@
-import requests
 import base64
-import json
-import os
 
-# TODO: Replace with the actual URL and your hackathon API key
-SAM_API_URL = os.getenv("SAM_API_URL")
-API_KEY = os.getenv("API_KEY")
+from core.providers import ProviderUnavailable, get_model_client
+from core.settings import get_settings
+
 
 def test_sam_endpoint(image_path, noun_phrase):
+    settings = get_settings()
     print(f"Testing SAM 3.1 Image Endpoint for: '{noun_phrase}' on {image_path}")
-    
-    # Encode image to base64
-    with open(image_path, "rb") as image_file:
-        encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+    print(f"Mode={settings.spatialtrace_mode} model={settings.sam_model_name}")
 
-    headers = {
-        "Authorization": f"Bearer {API_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-    # Verifying the assumption: one noun phrase per call
-    payload = {
-        "image": encoded_string,
-        "prompt": noun_phrase
-    }
+    if settings.spatialtrace_mode == "live":
+        with open(image_path, "rb") as image_file:
+            base64.b64encode(image_file.read()).decode("utf-8")
 
     try:
-        response = requests.post(SAM_API_URL, headers=headers, json=payload)
-        response.raise_for_status()
-        data = response.json()
-        
-        print("\n--- API Response ---")
-        print(f"Boxes: {data.get('boxes')}")
-        print(f"Scores: {data.get('scores')}")
-        print("Masks returned:", len(data.get('masks', [])) > 0)
-        return data
-        
-    except Exception as e:
-        print(f"API Error: {e}")
-        if hasattr(e, 'response') and e.response is not None:
-             print(e.response.text)
+        data = get_model_client().sam_segment(image_path, noun_phrase)
+    except ProviderUnavailable as exc:
+        print(f"Provider unavailable (fail closed): {exc}")
+        return None
+
+    print("\n--- API Response ---")
+    print(f"Boxes: {data.boxes}")
+    print(f"Scores: {data.scores}")
+    print("Masks returned:", len(data.masks) > 0)
+    return data.model_dump()
+
 
 if __name__ == "__main__":
-    # Test this on one of the crops saved by your keyframer earlier!
+    # Point this at a crop once Stage 2 has indexed a clip.
     # test_sam_endpoint("data/frames/clip_desk_01/crop_120.jpg", "keys")
     pass

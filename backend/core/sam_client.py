@@ -1,60 +1,29 @@
-import hashlib
-import json
-import sqlite3
-import os
+from core.contracts import SamResponse
+from core.providers import get_model_client
 
-# Note: You need to verify SAM 3.1 API facts (rate limits, prompt format) from the hackathon docs.
-# This wrapper assumes the image endpoint takes an image and a single noun phrase.
-
-DB_PATH = "data/spatialtrace.db"
 
 def get_cache_key(endpoint, payload):
-    # Hash the endpoint and payload to create a unique cache key
-    cache_string = f"{endpoint}_{json.dumps(payload, sort_keys=True)}"
-    return hashlib.md5(cache_string.encode('utf-8')).hexdigest()
+    from core.cache import cache_key
 
-def check_cache(cache_key):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("SELECT response_json FROM api_cache WHERE key = ?", (cache_key,))
-    row = cursor.fetchone()
-    conn.close()
-    if row:
-        return json.loads(row[0])
-    return None
+    return cache_key(endpoint, payload)
 
-def save_to_cache(cache_key, response_data):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT OR REPLACE INTO api_cache (key, response_json) VALUES (?, ?)",
-        (cache_key, json.dumps(response_data))
-    )
-    conn.commit()
-    conn.close()
 
-async def call_sam_image_endpoint(image_path, noun_phrase):
+def check_cache(cache_key_value):
+    from core.cache import get_cached
+
+    return get_cached(cache_key_value)
+
+
+def save_to_cache(cache_key_value, response_data):
+    from core.cache import set_cached
+
+    set_cached(cache_key_value, response_data)
+
+
+async def call_sam_image_endpoint(image_path, noun_phrase) -> dict:
     """
     Calls SAM 3.1 Image Endpoint with one noun phrase per call.
+    Uses the shared ModelClient (mock or live, plus dual cache).
     """
-    endpoint = "sam_3.1_image"
-    payload = {"image_path": image_path, "prompt": noun_phrase}
-    cache_key = get_cache_key(endpoint, payload)
-    
-    # Disk cache on every API call[cite: 1]
-    cached_response = check_cache(cache_key)
-    if cached_response:
-        print(f"Cache hit for '{noun_phrase}' on {image_path}")
-        return cached_response
-
-    print(f"Cache miss. Calling SAM API for '{noun_phrase}'...")
-    # TODO: Replace with actual SAM 3.1 HTTP POST request using your hackathon API key
-    # Mock response for now
-    mock_response = {
-        "masks": ["path/to/mock_mask.png"], 
-        "boxes": [[100, 100, 200, 200]], 
-        "scores": [0.95]
-    }
-    
-    save_to_cache(cache_key, mock_response)
-    return mock_response
+    result: SamResponse = get_model_client().sam_segment(image_path, noun_phrase)
+    return result.model_dump()

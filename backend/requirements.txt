@@ -3,3 +3,6 @@ uvicorn
 opencv-python
 numpy
 requests
+python-dotenv
+pydantic
+pytest

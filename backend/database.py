@@ -1,14 +1,20 @@
-import sqlite3
 import os
+import sqlite3
+from pathlib import Path
 
-DB_PATH = "data/spatialtrace.db"
 
-def init_db():
-    os.makedirs("data", exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+def get_db_path() -> Path:
+    from core.settings import get_settings
+
+    return get_settings().db_path
+
+
+def init_db(db_path: str | Path | None = None):
+    path = Path(db_path) if db_path is not None else get_db_path()
+    os.makedirs(path.parent, exist_ok=True)
+    conn = sqlite3.connect(path)
     cursor = conn.cursor()
 
-    # frames table[cite: 1]
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS frames (
             id TEXT PRIMARY KEY,
@@ -23,7 +29,6 @@ def init_db():
         )
     ''')
 
-    # sightings table (query-time results cache)[cite: 1]
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS sightings (
             id TEXT PRIMARY KEY,
@@ -38,7 +43,6 @@ def init_db():
         )
     ''')
 
-    # api_cache table (mirrored to disk)[cite: 1]
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS api_cache (
             key TEXT PRIMARY KEY,
@@ -49,7 +53,12 @@ def init_db():
 
     conn.commit()
     conn.close()
-    print("Database initialized successfully.")
+
+
+# Back-compat for imports that still read DB_PATH at module load.
+DB_PATH = "data/spatialtrace.db"
+
 
 if __name__ == "__main__":
     init_db()
+    print("Database initialized successfully.")
