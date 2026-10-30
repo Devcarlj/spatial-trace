@@ -54,3 +54,15 @@ def test_process_video_rejects_unsafe_clip_id(isolated_env, tmp_path):
         assert "clip_id" in str(exc)
     else:
         raise AssertionError("unsafe clip_id should be rejected")
+
+
+def test_reindex_cannot_overwrite_existing_evidence(isolated_env, tmp_path):
+    import pytest
+    clip = tmp_path / "motion.avi"
+    _write_motion_clip(clip)
+    result = process_video(clip, "keep-evidence")[0]
+    from pathlib import Path
+    original = Path(result["frame_path"]).read_bytes()
+    with pytest.raises(ValueError, match="already exists"):
+        process_video(clip, "keep-evidence")
+    assert Path(result["frame_path"]).read_bytes() == original

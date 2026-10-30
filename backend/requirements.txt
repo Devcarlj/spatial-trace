@@ -6,3 +6,4 @@ requests
 python-dotenv
 pydantic
 pytest
+meta-sam-parser==0.1.0

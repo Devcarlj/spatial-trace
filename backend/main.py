@@ -1,9 +1,10 @@
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from contextlib import asynccontextmanager
 from database import init_db
 from pathlib import Path
 import sqlite3
+import logging
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from core.settings import get_settings
@@ -11,11 +12,11 @@ from core.live_transport import ProviderUnavailable
 
 # Pydantic models for incoming requests
 class QueryRequest(BaseModel):
-    query: str
+    query: str = Field(max_length=200)
 
 class IndexRequest(BaseModel):
-    video_path: str
-    clip_id: str
+    video_path: str = Field(min_length=1, max_length=2048)
+    clip_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
 
 # Lifecycle manager to initialize DB on startup
 @asynccontextmanager
@@ -49,9 +50,9 @@ def frame_image(frame_id: str):
     return FileResponse(path, media_type="image/jpeg")
 
 @app.post("/api/index")
-async def index_video(req: IndexRequest):
+def index_video(req: IndexRequest):
     """
-    Triggers the Index Time pipeline: Frame Sampler -> Settle Detector -> Region Diff -> VLM -> SQLite[cite: 1].
+    Sample recorded footage and index its observed regions.
     """
     from core.keyframer import process_video
 
@@ -62,7 +63,8 @@ async def index_video(req: IndexRequest):
     except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Indexing failed: {exc}") from exc
+        logging.exception("Indexing failed")
+        raise HTTPException(status_code=500, detail="Indexing failed. Check the backend logs and retry with a new clip name.") from exc
     return {
         "status": "completed",
         "clip_id": req.clip_id,
@@ -71,7 +73,7 @@ async def index_video(req: IndexRequest):
     }
 
 @app.post("/api/query")
-async def query_memory(req: QueryRequest):
+def query_memory(req: QueryRequest):
     """Search indexed clips and visually verify the requested item."""
     from core.query_service import query_memory as run_query
 
@@ -85,7 +87,8 @@ async def query_memory(req: QueryRequest):
     except ProviderUnavailable as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Query failed: {exc}") from exc
+        logging.exception("Query failed")
+        raise HTTPException(status_code=500, detail="Query failed. Check the backend logs and try again.") from exc
 
 if __name__ == "__main__":
     import uvicorn

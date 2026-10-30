@@ -3,18 +3,8 @@ from main import QueryRequest, query_memory
 
 
 def _post_query(payload):
-    """Execute the await-free FastAPI route body without an event loop.
-
-    The Windows sandbox cannot create the Proactor event loop that HTTP test
-    clients require. The route is intentionally synchronous internally, so
-    advancing its coroutine once verifies the same service wiring.
-    """
-    coroutine = query_memory(QueryRequest(**payload))
-    try:
-        coroutine.send(None)
-    except StopIteration as result:
-        return result.value
-    raise AssertionError("query route unexpectedly yielded control")
+    """FastAPI runs the blocking pipeline in its synchronous worker pool."""
+    return query_memory(QueryRequest(**payload))
 
 
 def test_query_endpoint_returns_verified_result(isolated_env):

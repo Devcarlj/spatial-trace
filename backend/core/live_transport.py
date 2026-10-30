@@ -5,6 +5,7 @@ References: dev.meta.ai/docs/image-understanding and /sam/segmenting.
 import base64
 import json
 import re
+import math
 from pathlib import Path
 
 import requests
@@ -28,7 +29,7 @@ def responses(settings, model, prompt, image_path=None, segmentation=False):
     payload = {"model": model, "input": [{"type": "message", "role": "user", "content": content}],
                "stream": segmentation, "store": False}
     if segmentation:
-        payload["metadata"] = {"include_confidence": "true"}
+        payload["metadata"] = {"include_confidence": "true", "mask_encoding": "one_bit"}
     else:
         payload["max_output_tokens"] = 2048
     try:
@@ -78,13 +79,29 @@ def parse_json(text):
 
 def parse_segmentation(text):
     boxes, scores, masks = [], [], []
+    image_size = None
     for match in re.finditer(r"<\|box;([^|]+)\|>(<\|mask;.*?\|>)", text):
         fields = dict(field.split("=", 1) for field in match[1].split(";"))
         if "c" not in fields:
             raise ProviderUnavailable("SAM response omitted requested confidence.")
-        boxes.append([float(fields[key]) for key in ("x1", "y1", "x2", "y2")])
-        scores.append(float(fields["c"]))
+        try:
+            box = [float(fields[key]) for key in ("x1", "y1", "x2", "y2")]
+            score = float(fields["c"])
+            size = [int(fields["w"]), int(fields["h"])]
+        except (KeyError, ValueError) as exc:
+            raise ProviderUnavailable("Invalid SAM box geometry.") from exc
+        if (not all(math.isfinite(value) for value in [*box, score]) or not 0 <= score <= 1
+                or min(size) <= 0 or not 0 <= box[0] <= box[2] < size[0]
+                or not 0 <= box[1] <= box[3] < size[1] or image_size not in (None, size)):
+            raise ProviderUnavailable("Invalid SAM box geometry or confidence.")
+        # SAM wire corners are inclusive; all internal boxes are half-open.
+        boxes.append([box[0], box[1], box[2] + 1, box[3] + 1])
+        scores.append(score)
         masks.append(match[2])
+        image_size = size
     if text.strip() and not boxes:
         raise ProviderUnavailable("Unrecognized SAM segmentation output.")
-    return {"boxes": boxes, "scores": scores, "masks": masks}
+    result = {"boxes": boxes, "scores": scores, "masks": masks}
+    if image_size:
+        result["image_size"] = image_size
+    return result

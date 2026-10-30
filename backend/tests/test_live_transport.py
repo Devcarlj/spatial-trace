@@ -24,7 +24,8 @@ def test_stream_contract_sends_image_and_requires_completion(monkeypatch, tmp_pa
     payload = calls[0][1]["json"]
     assert payload["metadata"]["include_confidence"] == "true"
     assert payload["input"][0]["content"][1]["image_url"].startswith("data:image/jpeg;base64,")
-    assert parse_segmentation(text)["boxes"] == [[1,2,3,4]]
+    assert parse_segmentation(text)["boxes"] == [[1,2,4,5]]  # inclusive wire -> half-open
+    assert parse_segmentation(text)["image_size"] == [10, 10]
     assert parse_segmentation(text)["scores"] == [0.91]
 
 def test_empty_segmentation_and_bad_confidence():

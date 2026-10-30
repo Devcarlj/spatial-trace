@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 from typing import Any
 
 import cv2
@@ -41,8 +42,8 @@ def get_region_diff_bbox(
 
 
 def _safe_clip_id(clip_id: str) -> str:
-    if not clip_id or Path(clip_id).name != clip_id or clip_id in {".", ".."}:
-        raise ValueError("clip_id must be a simple directory name")
+    if re.fullmatch(r"[A-Za-z0-9_-]{1,64}", clip_id) is None:
+        raise ValueError("clip_id must contain 1–64 letters, digits, underscores or hyphens")
     return clip_id
 
 
@@ -56,11 +57,14 @@ def process_video(video_path: str | Path, clip_id: str) -> list[dict[str, Any]]:
         raise FileNotFoundError(f"Video does not exist: {source}")
     safe_clip_id = _safe_clip_id(clip_id)
     output_dir = settings.data_dir / "frames" / safe_clip_id
-    output_dir.mkdir(parents=True, exist_ok=True)
-
     cap = cv2.VideoCapture(str(source))
     if not cap.isOpened():
         raise ValueError(f"Unable to read video: {source}")
+    try:
+        output_dir.mkdir(parents=True, exist_ok=False)
+    except FileExistsError as exc:
+        cap.release()
+        raise ValueError("This clip name already exists. Use a new clip name to preserve earlier evidence.") from exc
 
     fps = cap.get(cv2.CAP_PROP_FPS) or 3.0
     frame_skip = max(1, round(fps / 3))

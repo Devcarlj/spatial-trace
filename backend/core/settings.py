@@ -63,8 +63,13 @@ class Settings(BaseModel):
     sam_score_high: float = 0.80
     sam_score_mid: float = 0.40
 
-    recall_frame_count: int = 8
-    parallel_candidate_count: int = 5
+    recall_frame_count: int = Field(default=8, ge=1, le=64)
+    parallel_candidate_count: int = Field(default=5, ge=1, le=16)
+    recovery_max_calls: int = Field(default=4, ge=0, le=8)
+    recovery_tiny_side: int = Field(default=32, ge=1)
+    movement_min_pixels: float = Field(default=12.0, ge=1)
+    movement_relative_threshold: float = Field(default=0.15, ge=0, le=1)
+    tracking_max_gap_seconds: float = Field(default=30.0, gt=0)
 
     @field_validator("spatialtrace_mode")
     @classmethod
@@ -107,6 +112,11 @@ def load_settings() -> Settings:
         sam_score_mid=_env_float("SAM_SCORE_MID", 0.40),
         recall_frame_count=_env_int("RECALL_FRAME_COUNT", 8),
         parallel_candidate_count=_env_int("PARALLEL_CANDIDATE_COUNT", 5),
+        recovery_max_calls=_env_int("RECOVERY_MAX_CALLS", 4),
+        recovery_tiny_side=_env_int("RECOVERY_TINY_SIDE", 32),
+        movement_min_pixels=_env_float("MOVEMENT_MIN_PIXELS", 12.0),
+        movement_relative_threshold=_env_float("MOVEMENT_RELATIVE_THRESHOLD", 0.15),
+        tracking_max_gap_seconds=_env_float("TRACKING_MAX_GAP_SECONDS", 30.0),
     )
 
 

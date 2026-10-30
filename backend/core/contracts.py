@@ -34,6 +34,7 @@ class SamResponse(BaseModel):
     boxes: list[list[float]] = Field(default_factory=list)
     scores: list[float] = Field(default_factory=list)
     masks: list[str] = Field(default_factory=list)
+    image_size: list[int] | None = None
 
     @field_validator("boxes")
     @classmethod
@@ -42,6 +43,22 @@ class SamResponse(BaseModel):
             if len(box) != 4:
                 raise ValueError("each SAM box must be [x1, y1, x2, y2]")
         return value
+
+
+class MaskOverlay(BaseModel):
+    """Decoded box-local PNG placed in half-open full-frame coordinates."""
+
+    data_url: str
+    bbox: list[float]
+    width: int
+    height: int
+
+
+class MovementEvidence(BaseModel):
+    status: Literal["moved", "stationary", "unknown"] = "unknown"
+    reason: str
+    displacement: list[float] | None = None
+    camera_compensated: bool = False
 
 
 class SpatialJson(BaseModel):
@@ -56,6 +73,9 @@ class TrailItem(BaseModel):
     ts: float | None = None
     bbox: list[float] | None = None
     score: float | None = None
+    mask_overlay: MaskOverlay | None = None
+    track_id: str | None = None
+    recovered: bool = False
 
 
 class QueryResponse(BaseModel):
@@ -68,3 +88,8 @@ class QueryResponse(BaseModel):
     frame_path: str | None = None
     frame_id: str | None = None
     frame_url: str | None = None
+    mask_overlay: MaskOverlay | None = None
+    movement: MovementEvidence | None = None
+    track_id: str | None = None
+    score: float | None = None
+    recovered: bool = False

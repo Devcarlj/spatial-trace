@@ -52,6 +52,11 @@ def init_db(db_path: str | Path | None = None):
     ''')
 
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_frames_clip_ts ON frames (clip_id, ts)')
+    # Additive migration for existing local databases.
+    sighting_columns = {row[1] for row in cursor.execute("PRAGMA table_info(sightings)")}
+    for column in ("track_id", "tracking_json"):
+        if column not in sighting_columns:
+            cursor.execute(f"ALTER TABLE sightings ADD COLUMN {column} TEXT")
 
     conn.commit()
     conn.close()

@@ -6,13 +6,17 @@ import json
 import sqlite3
 import uuid
 import hashlib
-from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from itertools import zip_longest
 
 from core.contracts import QueryResponse, TrailItem
 from core.providers import get_model_client
 from core.settings import get_settings
+from core.masks import mask_overlay
+from core.tracking import build_track
+from core.verification import Detection, verify_frame
+from core.files import atomic_write
 from database import get_db_path, init_db
 
 
@@ -42,7 +46,7 @@ def _row_to_frame(row: sqlite3.Row) -> IndexedFrame:
 
 
 def retrieve_frames(normalized_query: str, limit: int | None = None) -> list[IndexedFrame]:
-    """Return newest indexed frames whose caption or labels mention the query."""
+    """Recall mentions plus recent context to check gaps and uncaptioned objects."""
     settings = get_settings()
     init_db(get_db_path())
     limit = limit or settings.recall_frame_count
@@ -55,36 +59,28 @@ def retrieve_frames(normalized_query: str, limit: int | None = None) -> list[Ind
     conn.row_factory = sqlite3.Row
     try:
         rows = conn.execute(
-            f"SELECT * FROM frames WHERE {clauses} ORDER BY created_at DESC, ts DESC LIMIT ?", params
+            f"SELECT * FROM frames WHERE {clauses} ORDER BY created_at DESC, ts DESC, rowid DESC LIMIT ?", params
         ).fetchall()
         if not rows:
-            rows = conn.execute("SELECT * FROM frames ORDER BY created_at DESC, ts DESC LIMIT ?", (limit,)).fetchall()
+            rows = conn.execute("SELECT * FROM frames ORDER BY created_at DESC, ts DESC, rowid DESC LIMIT ?", (limit,)).fetchall()
+        else:
+            context = conn.execute("SELECT * FROM frames WHERE clip_id=? ORDER BY ts DESC, rowid DESC LIMIT ?",
+                                   (rows[0]["clip_id"], limit)).fetchall()
+            combined, seen = [], set()
+            for pair in zip_longest(rows, context):
+                for row in pair:
+                    if row is not None and row["id"] not in seen:
+                        combined.append(row)
+                        seen.add(row["id"])
+            rows = combined[:limit]
     finally:
         conn.close()
     return [_row_to_frame(row) for row in rows]
 
 
-def _full_frame_box(frame: IndexedFrame, crop_box: list[float]) -> list[float]:
-    crop_x, crop_y = frame.diff_bbox[:2]
-    x1, y1, x2, y2 = crop_box
-    return [x1 + crop_x, y1 + crop_y, x2 + crop_x, y2 + crop_y]
-
-
-def _verify(frame: IndexedFrame, noun_phrase: str) -> tuple[IndexedFrame, float, list[float] | None, str | None]:
-    response = get_model_client().sam_segment(frame.crop_path, noun_phrase)
-    if not response.scores:
-        return frame, 0.0, None, None
-    position = max(range(len(response.scores)), key=response.scores.__getitem__)
-    box = response.boxes[position] if position < len(response.boxes) else None
-    mask = response.masks[position] if position < len(response.masks) else None
-    return frame, response.scores[position], _full_frame_box(frame, box) if box else None, mask
-
-
-def _has_moved(trail: list[TrailItem]) -> bool:
-    if len(trail) < 2 or not trail[0].bbox or not trail[-1].bbox:
-        return False
-    first, last = trail[0].bbox, trail[-1].bbox
-    return first[:2] != last[:2]
+def _trail_item(frame: IndexedFrame, hit: Detection, track_id: str | None = None) -> TrailItem:
+    return TrailItem(frame_id=frame.id, ts=frame.timestamp, bbox=hit.bbox, score=hit.score,
+                     mask_overlay=mask_overlay(hit.mask, hit.bbox), track_id=track_id, recovered=hit.recovered)
 
 
 def query_memory(query: str) -> QueryResponse:
@@ -97,8 +93,7 @@ def query_memory(query: str) -> QueryResponse:
             return QueryResponse(state="UNSURE", answer="No recorded offline result for this query.", query=query)
         return QueryResponse.model_validate_json(path.read_text(encoding="utf-8"))
     result = _query_memory(query)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(result.model_dump_json(), encoding="utf-8")
+    atomic_write(path, result.model_dump_json())
     return result
 
 
@@ -119,19 +114,20 @@ def _query_memory(query: str) -> QueryResponse:
         )
 
     settings = get_settings()
-    candidates = candidates[: settings.parallel_candidate_count]
-    with ThreadPoolExecutor(max_workers=len(candidates)) as executor:
-        verified = list(executor.map(lambda frame: _verify(frame, normalized), candidates))
+    with ThreadPoolExecutor(max_workers=min(len(candidates), settings.parallel_candidate_count)) as executor:
+        verified = list(executor.map(lambda frame: (frame, verify_frame(frame, normalized)), candidates))
 
-    high_confidence = [item for item in verified if item[1] >= settings.sam_score_high and item[2]]
+    high_confidence = [(frame, [hit for hit in hits if hit.score >= settings.sam_score_high])
+                       for frame, hits in verified if any(hit.score >= settings.sam_score_high for hit in hits)]
     if not high_confidence:
-        possible = [item for item in verified if item[1] >= settings.sam_score_mid and item[2]]
+        possible = [(frame, hits[0]) for frame, hits in verified if hits and hits[0].score >= settings.sam_score_mid]
         if possible:
-            frame, score, box, mask = possible[0]
+            frame, hit = possible[0]
             return QueryResponse(state="UNSURE", query=original_query,
                                  answer=f"Possible match for {normalized}; I cannot verify it confidently.",
-                                 frame_id=frame.id, frame_path=frame.frame_path, bbox=box, mask=mask,
-                                 trail=[TrailItem(frame_id=frame.id, ts=frame.timestamp, bbox=box, score=score)])
+                                 frame_id=frame.id, frame_path=frame.frame_path, bbox=hit.bbox, mask=hit.mask,
+                                 score=hit.score, recovered=hit.recovered, mask_overlay=mask_overlay(hit.mask, hit.bbox),
+                                 trail=[_trail_item(frame, hit)])
         return QueryResponse(
             state="UNSURE",
             answer=f"I found possible mentions of {normalized}, but could not verify it in the saved frames.",
@@ -140,33 +136,54 @@ def _query_memory(query: str) -> QueryResponse:
 
     # Clip-relative seconds cannot establish ordering between unrelated clips.
     newest_clip = high_confidence[0][0].clip_id
-    high_confidence = [item for item in high_confidence if item[0].clip_id == newest_clip]
-    high_confidence.sort(key=lambda item: item[0].timestamp)
-    trail = [TrailItem(frame_id=frame.id, ts=frame.timestamp, bbox=box, score=score) for frame, score, box, _ in high_confidence[-3:]]
-    latest_frame, latest_score, latest_box, latest_mask = high_confidence[-1]
-    moved = _has_moved(trail)
+    observations = [(frame, [hit for hit in hits if hit.score >= settings.sam_score_high])
+                    for frame, hits in verified if frame.clip_id == newest_clip]
+    # A later non-detection does not invalidate a historical sighting, but we do
+    # not bridge an unverified observation when associating a track.
+    latest_ts = max(frame.timestamp for frame, hits in observations if hits)
+    observations = [(frame, hits) for frame, hits in observations if frame.timestamp <= latest_ts]
+    track, movement = build_track(observations)
+    latest_frame, latest_hit = track[-1]
+    track_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{newest_clip}:{normalized}:{latest_frame.id}"))
+    trail = [_trail_item(frame, hit, track_id) for frame, hit in track]
+    moved = movement.status == "moved"
     state = "MOVED" if moved else "FOUND_NOW"
     if moved:
-        answer = f"{normalized.title()} appears to have moved; its latest indexed location is in the most recent matching frame."
+        answer = f"{normalized.title()} appears to have moved between associated sightings after accounting for camera motion; the latest verified location is shown."
     else:
         answer = f"{normalized.title()} was found in the latest matching indexed frame."
     spatial = client.describe_spatial(latest_frame.frame_path, normalized)
     answer += f" On {spatial.surface}, {spatial.anchor}. Visibility: {spatial.visibility}."
+    if movement.status == "unknown":
+        answer += f" Movement is uncertain: {movement.reason}"
+    if any(frame.timestamp > latest_ts for frame, _ in verified if frame.clip_id == newest_clip):
+        answer += " It was not confidently verified in later searched observations; this does not establish absence."
     conn = sqlite3.connect(get_db_path())
     try:
-        for frame, score, box, mask in high_confidence[-3:]:
+        conn.execute("BEGIN IMMEDIATE")
+        for frame, hit in track:
             exists = conn.execute("SELECT id FROM sightings WHERE frame_id=? AND query_label=?",
                                   (frame.id, normalized)).fetchone()
-            if not exists:
-                conn.execute("INSERT INTO sightings (id,frame_id,query_label,bbox,mask_path,score,spatial_json) VALUES (?,?,?,?,?,?,?)",
-                             (str(uuid.uuid4()), frame.id, normalized, json.dumps(box), mask, score, spatial.model_dump_json()))
+            spatial_json = spatial.model_dump_json() if frame.id == latest_frame.id else "{}"
+            if exists:
+                conn.execute("UPDATE sightings SET bbox=?,mask_path=?,score=?,spatial_json=?,track_id=?,tracking_json=? WHERE id=?",
+                             (json.dumps(hit.bbox), hit.mask, hit.score, spatial_json, track_id, movement.model_dump_json(), exists[0]))
+            else:
+                conn.execute("INSERT INTO sightings (id,frame_id,query_label,bbox,mask_path,score,spatial_json,track_id,tracking_json) VALUES (?,?,?,?,?,?,?,?,?)",
+                             (str(uuid.uuid4()), frame.id, normalized, json.dumps(hit.bbox), hit.mask, hit.score, spatial_json,
+                              track_id, movement.model_dump_json()))
         conn.commit()
     finally:
         conn.close()
     return QueryResponse(
         state=state,
-        bbox=latest_box,
-        mask=latest_mask,
+        bbox=latest_hit.bbox,
+        mask=latest_hit.mask,
+        mask_overlay=trail[-1].mask_overlay,
+        movement=movement,
+        track_id=track_id,
+        score=latest_hit.score,
+        recovered=latest_hit.recovered,
         trail=trail,
         answer=answer,
         query=original_query,

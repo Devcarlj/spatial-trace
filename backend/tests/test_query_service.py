@@ -43,15 +43,16 @@ def test_query_retrieves_and_verifies_indexed_item(isolated_env):
     assert result.trail[0].score == 0.88
 
 
-def test_query_normalizes_synonym_and_reports_movement(isolated_env):
+def test_query_normalizes_synonym_but_does_not_claim_movement_without_pixels(isolated_env):
     _insert_frame("frame-old", 1.0, "desk_frame_01.jpg", ["reading glasses"])
     _insert_frame("frame-new", 2.0, "desk_frame_moved.jpg", ["reading glasses"], (100, 20, 600, 400))
 
     result = query_memory("where are my specs")
 
-    assert result.state == "MOVED"
+    assert result.state == "FOUND_NOW"
     assert result.frame_id == "frame-new"
-    assert [item.frame_id for item in result.trail] == ["frame-old", "frame-new"]
+    assert result.movement.status == "unknown"
+    assert [item.frame_id for item in result.trail] == ["frame-new"]
 
 
 def test_query_returns_unsure_when_index_has_no_match(isolated_env):

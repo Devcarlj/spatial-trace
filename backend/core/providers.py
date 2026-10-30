@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from abc import ABC, abstractmethod
 from functools import lru_cache
 from pathlib import Path
@@ -14,6 +15,7 @@ from core.cache import cached_call
 from core.contracts import QueryResponse, SamResponse, SpatialJson, VlmIndexOutput
 from core.settings import Settings, get_settings
 from core.live_transport import ProviderUnavailable, responses, parse_json, parse_segmentation
+from core.demo_fixtures import DEMO_SEGMENTATIONS
 
 SYNONYM_MAP = {
     "specs": "reading glasses",
@@ -49,6 +51,7 @@ class MockSamProvider(SamProvider):
     """Fixture boxes/masks/scores keyed by (image stem, noun)."""
 
     fixtures: dict[tuple[str, str], dict[str, Any]] = {
+        **DEMO_SEGMENTATIONS,
         ("desk_frame_01", "reading glasses"): {
             "boxes": [[120.0, 80.0, 260.0, 160.0]],
             "scores": [0.93],
@@ -113,6 +116,9 @@ class MockVlmProvider(VlmProvider):
 
     def describe_crop(self, crop_path: str) -> str:
         name = Path(crop_path).name
+        for (stem, noun) in DEMO_SEGMENTATIONS:
+            if Path(crop_path).stem == stem:
+                return json.dumps({"objects": [noun], "caption": f"Synthetic demo: {noun} on a textured desk."})
         self.attempts[name] = self.attempts.get(name, 0) + 1
         if name == "bad_then_good.jpg" and self.attempts[name] == 1:
             return "{not valid json"
@@ -123,11 +129,12 @@ class MockVlmProvider(VlmProvider):
 
 class MockLlmProvider(LlmProvider):
     def normalize_query(self, query: str) -> str:
-        words = query.strip().lower()
+        words = query.strip().lower().rstrip("?.! ")
+        words = re.sub(r"^(?:(?:where (?:is|are)|find|locate|show)(?: me)?\s+)?(?:(?:my|the|a|an)\s+)?", "", words)
         for src, dest in SYNONYM_MAP.items():
-            if src in words:
+            if re.search(r"\b" + re.escape(src) + r"\b", words):
                 return dest
-        return query.strip()
+        return words
 
     def describe_spatial(self, crop_path: str, noun_phrase: str) -> dict[str, Any]:
         payload = {

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from core.settings import get_settings
+from core.files import atomic_write
 from database import init_db
 
 
@@ -20,7 +21,7 @@ def cache_key(endpoint: str, payload: Any) -> str:
     blob = json.dumps({"endpoint": endpoint, "payload": payload, "images": images,
                        "mode": settings.spatialtrace_mode, "base": settings.sam_base_url,
                        "models": [settings.sam_model_name, settings.vlm_model_name, settings.llm_model_name],
-                       "version": 2}, sort_keys=True, default=str)
+                       "version": 3}, sort_keys=True, default=str)  # half-open boxes + source dimensions
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
@@ -41,7 +42,10 @@ def _disk_path(key: str) -> Path:
 def get_cached(key: str) -> Any | None:
     disk = _disk_path(key)
     if disk.exists():
-        return json.loads(disk.read_text(encoding="utf-8"))
+        try:
+            return json.loads(disk.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass  # Recover legacy partial files from the SQLite copy.
 
     conn = _connect()
     try:
@@ -51,7 +55,7 @@ def get_cached(key: str) -> Any | None:
     if not row:
         return None
     data = json.loads(row["response_json"])
-    disk.write_text(json.dumps(data), encoding="utf-8")
+    atomic_write(disk, json.dumps(data))
     return data
 
 
@@ -66,7 +70,7 @@ def set_cached(key: str, data: Any) -> None:
         conn.commit()
     finally:
         conn.close()
-    _disk_path(key).write_text(encoded, encoding="utf-8")
+    atomic_write(_disk_path(key), encoded)
 
 
 def cached_call(endpoint: str, payload: Any, fn) -> Any:
