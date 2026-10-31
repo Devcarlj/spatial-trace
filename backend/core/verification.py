@@ -86,9 +86,15 @@ def _recovery_image(image: np.ndarray, region: list[int]) -> tuple[str, tuple[in
 
 
 def verify_frame(frame, noun: str) -> list[Detection]:
-    clothing = re.fullmatch(r"(?:a )?person (?:wearing|in) (.+)", noun.strip().lower())
+    # Attribute phrases for any base object ("person wearing a blue vest",
+    # "dog with a red collar"): detect the base first, then confirm the
+    # attribute on that instance's crop. Previously only person phrases
+    # reached this two-stage check.
+    clothing = re.fullmatch(r"(.+?) (?:wearing|in|with) (.+)", noun.strip().lower())
     if clothing:
-        people = verify_frame(frame, "person")
+        base = re.sub(r"^(?:a |an )", "", clothing.group(1)).strip()
+        attribute = re.sub(r"^(?:a |an )", "", clothing.group(2)).strip()
+        people = verify_frame(frame, base)
         image = cv2.imread(frame.frame_path)
         if image is None:
             return []
@@ -103,7 +109,7 @@ def verify_frame(frame, noun: str) -> list[Detection]:
             if right <= left or bottom <= top:
                 continue
             path, _ = _recovery_image(image, [left, top, right-left, bottom-top])
-            if get_model_client().verify_attribute(path, clothing.group(1)):
+            if get_model_client().verify_attribute(path, attribute):
                 accepted.append(hit)
         return accepted
     settings = get_settings()

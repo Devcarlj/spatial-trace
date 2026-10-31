@@ -41,7 +41,9 @@ def evaluate_queries(manifest, url):
         start = time.perf_counter()
         outcome = {"query": case["query"], "passed": False}
         try:
-            response = requests.post(url.rstrip("/") + "/api/query", json={"query": case["query"]}, timeout=600)
+            # Explicit clip selection: the server must not answer from any other clip.
+            response = requests.post(url.rstrip("/") + "/api/query",
+                                     json={"query": case["query"], "clip_id": manifest["clip_id"]}, timeout=600)
             response.raise_for_status()
             result = response.json()
             passed, iou = grade(case, result, manifest["clip_id"])
@@ -53,7 +55,12 @@ def evaluate_queries(manifest, url):
                 if expected_movement != "moved" and claim:
                     passed = False
             expected, actual = case.get("expected_last_seen_seconds"), result.get("last_seen_seconds")
-            outcome.update(passed=passed, box_iou=iou,
+            search = result.get("search") or {}
+            outcome.update(passed=passed, box_iou=iou, search_complete=search.get("complete"),
+                           budget_exhausted=search.get("budget_exhausted"),
+                           frames_checked=search.get("frames_checked"),
+                           model_calls=search.get("model_calls"),
+                           cached_calls_reused=search.get("cached_calls_reused"),
                            last_seen_error_seconds=abs(expected - actual)
                            if expected is not None and actual is not None and result.get("clip_id") == manifest["clip_id"] else None,
                            false_movement_claim=claim if expected_movement == "stationary" else None,
@@ -65,6 +72,8 @@ def evaluate_queries(manifest, url):
     stationary = [item["false_movement_claim"] for item in outcomes if item.get("false_movement_claim") is not None]
     return {"passed": sum(item["passed"] for item in outcomes), "total": len(outcomes),
             "average_latency_seconds": average([item["latency_seconds"] for item in outcomes]),
+            "average_model_calls": average([item["model_calls"] for item in outcomes if item.get("model_calls") is not None]),
+            "incomplete_search_count": sum(item.get("search_complete") is False for item in outcomes),
             "mean_last_seen_error_seconds": average([item["last_seen_error_seconds"] for item in outcomes if item.get("last_seen_error_seconds") is not None]),
             "false_movement_rate": average(stationary), "stationary_case_count": len(stationary),
             "movement_labels_missing": sum("expected_movement" not in case for case in manifest.get("cases", [])),

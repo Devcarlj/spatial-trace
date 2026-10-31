@@ -40,3 +40,29 @@ still a provisional sampled expectation: small distant people and unsampled
 instants are not an exhaustive absence proof. No held-out test clips exist yet;
 the six desk scenarios in dataset.json are missing footage. These results do not
 establish general accuracy or complete milestone 1.
+
+
+## Milestone 2 mechanisms - 2026-10-31 (no new live accuracy claims)
+
+Code-level verification only; no new footage was indexed and no provider calls
+were made for this section. The backend suite passes 85 tests locally (one
+asyncio startup test is deselected in the current sandbox because Windows
+asyncio loop creation is blocked there; the same hang reproduces on the
+pre-milestone tree). New tests cover: selected clips never mixing (including
+per-clip snapshot keys), unknown-clip searches checking zero frames,
+first-seen/last-seen routing, budget exhaustion returning UNSURE with
+`search.complete=false` instead of implying absence, last-seen stopping after
+the newest positive batch, stored-sighting reuse spending zero new model
+calls on a repeat query, last-seen refinement narrowing 2.0s -> 3.0s inside a
+2.0-4.0s gap with the refined frame stored as evidence, attribute checks for
+non-person bases, partial indexing (one failed frame) followed by a safe
+retry that reuses the stored frame and reaches ready, and pan footage
+producing no scene-change samples.
+
+Latency/call comparison against the calibration baseline above is not yet
+possible: the baseline numbers predate the `search` report (frames checked /
+model calls were not recorded), and held-out temporal/attribute cases still
+await milestone-1 footage and independent human labels. The vest/shirt
+numbers above remain the only live accuracy evidence; a last-seen answer is
+still a latest verified sampled sighting, not an exact exit time, and
+`last_seen_interval` now states the checked bounds explicitly.

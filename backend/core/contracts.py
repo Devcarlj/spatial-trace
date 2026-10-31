@@ -78,6 +78,29 @@ class TrailItem(BaseModel):
     recovered: bool = False
 
 
+class QueryIntentModel(BaseModel):
+    kind: Literal["locate", "last_seen", "first_seen", "moved"]
+    target: str
+    base_object: str
+    attribute: str | None = None
+
+
+class SearchReport(BaseModel):
+    """What a query actually searched, so partial searches cannot look complete."""
+
+    clip_id: str | None = None
+    scope: str = ""
+    frames_considered: int = 0
+    frames_checked: int = 0
+    frame_check_budget: int = 0
+    budget_exhausted: bool = False
+    complete: bool = True
+    model_calls: int = 0
+    cached_calls_reused: int = 0
+    evidence_reused: int = 0
+    refined: bool = False
+
+
 class QueryResponse(BaseModel):
     clip_id: str | None = None
     last_seen_seconds: float | None = None
@@ -95,3 +118,8 @@ class QueryResponse(BaseModel):
     track_id: str | None = None
     score: float | None = None
     recovered: bool = False
+    intent: QueryIntentModel | None = None
+    search: SearchReport | None = None
+    # [last verified sighting, next checked non-sighting] in clip seconds.
+    # The true exit time lies inside; last_seen_seconds alone is sampled.
+    last_seen_interval: list[float] | None = None

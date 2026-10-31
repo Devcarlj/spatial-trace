@@ -1,0 +1,7 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.14, pytest-9.2.0, pluggy-1.7.0 -- C:\VScodes\spacial-trace\backend\.venv\Scripts\python.exe
+rootdir: C:\VScodes\spacial-trace\backend
+configfile: pytest.ini
+plugins: anyio-4.15.1
+collecting ... collected 5 items
+

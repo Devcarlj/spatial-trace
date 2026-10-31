@@ -13,6 +13,7 @@ from core.live_transport import ProviderUnavailable
 # Pydantic models for incoming requests
 class QueryRequest(BaseModel):
     query: str = Field(max_length=200)
+    clip_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,64}$")
 
 class IndexRequest(BaseModel):
     video_path: str = Field(min_length=1, max_length=2048)
@@ -62,6 +63,13 @@ def frame_image(frame_id: str):
         raise HTTPException(404, "Frame unavailable")
     return FileResponse(path, media_type="image/jpeg")
 
+@app.get("/api/clips")
+def list_indexed_clips():
+    """Clips with explicit indexing state: indexing/ready/partial/failed."""
+    from database import list_clips
+    return {"clips": list_clips()}
+
+
 @app.post("/api/index")
 def index_video(req: IndexRequest):
     """
@@ -80,10 +88,15 @@ def index_video(req: IndexRequest):
     except Exception as exc:
         logging.exception("Indexing failed")
         raise HTTPException(status_code=500, detail="Indexing failed. Check the backend logs and retry with a new clip name.") from exc
+    from database import get_clip
+    clip = get_clip(req.clip_id) or {}
+    status = clip.get("status", "ready")
     return {
-        "status": "completed",
+        "status": status,
         "clip_id": req.clip_id,
         "indexed_frame_count": len(frames),
+        "failed_frame_count": clip.get("failed_frame_count", 0),
+        "retryable": status in {"partial", "failed"},
         "frames": frames,
     }
 
@@ -92,7 +105,7 @@ def query_memory(req: QueryRequest):
     """Search indexed clips and visually verify the requested item."""
     try:
         from core.query_service import query_memory as run_query
-        result = run_query(req.query)
+        result = run_query(req.query, req.clip_id)
         if result.frame_id:
             result.frame_url = f"/api/frames/{result.frame_id}"
         for item in result.trail:

@@ -77,7 +77,11 @@ def cached_call(endpoint: str, payload: Any, fn) -> Any:
     key = cache_key(endpoint, payload)
     hit = get_cached(key)
     if hit is not None:
+        from core.budget import count_cache_reuse
+        count_cache_reuse()
         return hit
+    from core.budget import count_model_call
+    count_model_call()
     result = fn()
     set_cached(key, result)
     return result

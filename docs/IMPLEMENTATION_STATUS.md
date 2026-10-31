@@ -1,7 +1,7 @@
 # SpatialTrace implementation status
 
 Updated: 2026-10-31. Scope: current local working tree, including uncommitted
-changes. Follow the [roadmap](IMPLEMENTATION_PLAN.md) for ordered work and criteria.
+changes. Milestone 2 code is implemented; its held-out evidence is not. Follow the [roadmap](IMPLEMENTATION_PLAN.md) for ordered work and criteria.
 
 ## Implemented capabilities
 
@@ -27,7 +27,9 @@ changes. Follow the [roadmap](IMPLEMENTATION_PLAN.md) for ordered work and crite
 
 ## Recorded validation
 
-- Latest backend run: **69 tests passed**, including detection/mask metrics,
+- Latest backend run: **85 tests passed** (plus one asyncio startup test that
+  cannot create a Windows event loop inside the current sandbox; it hangs the
+  same way on the pre-milestone tree), including detection/mask metrics,
   duplicate predictions, missing samples, and false-movement controls alongside
   temporal search, attributes, recovery, tracking, transport, masks, and APIs.
 - Earlier TypeScript, ESLint, production build, and desktop/narrow browser checks
@@ -67,15 +69,22 @@ tests and this small calibration sample do not establish broad accuracy.
   error, uncertainty, exact-sample coverage, and latency are implemented. Reports
   retain provenance, declared cache state, settings, evidence, and errors.
   Mask/movement measurements await labels; held-out calibration remains.
-- Search: newest-clip scope for last-seen; limited candidates for ordinary queries.
-  Explicit clip selection and general intent/attributes remain. The UI footer's
-  all-clips wording needs alignment.
-- Performance: last-seen currently verifies all unique samples before selecting
-  the latest positive. Per-query workers are bounded; overall job/call/resource
-  budgets are incomplete. Long operations still block the user's workflow.
-- Sampling: camera pans can over-trigger visual differences; short appearances
-  between samples can be missed. Failed indexes can leave partial evidence with
-  no readiness model or resumable retry workflow.
+- Search: explicit clip selection across API/UI/CLI/evaluator with per-clip
+  snapshot keys, structured temporal intent (locate, last/first seen, moved)
+  and attributes for any base object, per-query frame-check budgets with
+  recent-first batches, and stored-sighting/cache evidence reuse. Responses
+  carry clip scope, frames checked/considered, new model calls, and whether
+  the search completed. Held-out temporal/attribute accuracy remains
+  unmeasured pending milestone-1 labels.
+- Performance: last-seen now stops at the first verified newest-first batch
+  and can refine inside the following gap. Per-query frame-check budgets are
+  enforced and reported; background jobs and global call/resource budgets
+  (milestone 3) are still missing. Long operations still block the workflow.
+- Sampling: global-translation pans no longer trigger scene-change samples
+  (phase-correlation check; periodic coverage continues). Short appearances
+  between samples can still be missed. Indexing now records ready/partial/
+  failed clip states; partial/failed clips retry safely, reusing indexed
+  timestamps instead of duplicating or overwriting evidence.
 - Tracking: persistent identity, explicit lost/re-acquired states, occlusion/
   re-entry association, and broad calibration remain.
 - Review: detailed reasons, attribute explanations, side-by-side movement,

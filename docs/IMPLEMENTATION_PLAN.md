@@ -40,6 +40,22 @@ accuracy/latency targets for review. Product-wide targets are not yet agreed.
 
 ## Milestone 2 — accurate, affordable temporal search
 
+Implementation progress (2026-10-31): the code for every bullet below is in
+place — explicit clip selection (API `clip_id`, `GET /api/clips`, UI selector,
+CLI `--clip`, evaluator), structured intent (locate/last-seen/first-seen/moved
+plus base+attribute splitting for any object), per-query frame-check budgets
+with recent-first batched verification, stored-sighting/cache evidence reuse
+and a reported `search` completeness block, pan-suppressed scene-change
+sampling, finer-frame refinement after the last positive sample, and
+indexing/ready/partial/failed clip states with safe retry of partial clips.
+85 backend tests pass locally (one asyncio startup test cannot run in the
+current sandbox because Windows asyncio loop creation is blocked there; it
+hangs identically on the pre-milestone tree). What remains for completion is
+evidence, not code: held-out temporal/attribute cases still need the
+milestone-1 footage and independent human labels, so held-out pass rates and
+a latency/call comparison against the calibration baseline are not yet
+measured. Do not tune thresholds on calibration clips to claim them.
+
 - Explicit clip selection across API, UI, and evaluator; consistent scope wording.
 - Structured temporal intent and attributes beyond current person phrase patterns.
 - Per-request model-call budgets, recent-first batches, and evidence reuse.

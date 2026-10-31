@@ -33,8 +33,12 @@ http://127.0.0.1:3000 in your browser. Close those two windows to stop the
 servers.
 
 Open the UI, enter an absolute video path on the backend machine and a
-unique clip name, click **Index video**, then ask about an object. Existing
-clip names are rejected to preserve their saved evidence. Model credentials
+unique clip name, click **Index video**, then ask about an object. A fully
+indexed (ready) clip name is rejected to preserve its saved evidence; a
+partial or failed clip can be re-indexed under the same name and only its
+missing frames are retried. Before searching you may select one clip;
+a selected clip is searched on its own and sightings are never mixed
+across clips. Model credentials
 stay on the backend; these endpoints are for trusted local use, not public
 hosting.
 
@@ -88,12 +92,17 @@ Retrieval combines text matches with recent context from the newest matching cli
 and falls back to recent frames when captions do not match. Up to eight candidates
 are checked by default, with five parallel workers.
 
-Last-seen questions instead verify all unique indexed timestamps in the newest
-clip. They return a latest verified sampled sighting, not an exact disappearance
-time. Explicit clip selection is not yet available. Person/clothing phrases such
-as `person wearing a blue vest` detect the person first, then visually check their
-clothing. Attribute handling is currently limited to these person phrase patterns;
-a detection score is not a calibrated probability that the attribute is correct.
+Last-seen questions search one clip (the selected clip, else the newest)
+newest-first in batches and stop at the first verified batch; first-seen
+questions search oldest-first. When the clip's source video is still on disk,
+finer frames are extracted between the last positive sample and the next
+checked negative to narrow the time; the response reports that interval.
+They return a latest verified sampled sighting, not an exact disappearance
+time. Attribute phrases such as `person wearing a blue vest` or
+`dog with a red collar` detect the base object first, then visually check the
+attribute on that instance; a leading colour (`red mug`) is parsed as an
+attribute of its base object too. A detection score is not a calibrated
+probability that the attribute is correct.
 
 Tracking anchors on the latest confident detection and associates older sightings
 using masked color appearance, size, and position. Background ORB features and a

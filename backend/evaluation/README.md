@@ -50,6 +50,10 @@ with full-resolution boxes at 4s and 8s. The blue vest is distinct from the whit
 shirt underneath. Shirt absence remains sample-based and provisional: distant
 garments, unsampled instants, and exact exit timing require further review.
 
-Last-seen searches all unique indexed samples in the newest clip. It can take
-many provider calls. Clothing decomposition currently supports normalized person
-wearing/in phrases only. These limits are milestone 2 work, not baseline claims.
+Last-seen searches one clip (the evaluator always selects the manifest clip)
+newest-first in batches under the per-query frame-check budget and stops at the
+first verified batch; reports include frames checked, new model calls, cached
+calls reused, and whether the search completed. Attribute decomposition supports
+"<base> wearing/in/with <attribute>" for any base object plus leading-colour
+attributes. These are milestone 2 mechanisms; held-out accuracy is not yet
+measured, so they are not baseline claims.

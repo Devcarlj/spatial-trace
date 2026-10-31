@@ -14,7 +14,7 @@ def call_cheap_vlm(crop_path):
     return result.model_dump()
 
 
-def index_settled_frame(clip_id, timestamp, frame_path, crop_path, diff_bbox):
+def index_settled_frame(clip_id, timestamp, frame_path, crop_path, diff_bbox, sampling_reason="periodic"):
     """
     Writes the processed keyframe data to SQLite.
     """
@@ -30,9 +30,9 @@ def index_settled_frame(clip_id, timestamp, frame_path, crop_path, diff_bbox):
     diff_bbox_json = json.dumps(diff_bbox)
 
     cursor.execute('''
-        INSERT INTO frames (id, clip_id, ts, frame_path, crop_path, diff_bbox, caption, objects_json)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (frame_id, clip_id, timestamp, frame_path, crop_path, diff_bbox_json, vlm_result["caption"], objects_json))
+        INSERT INTO frames (id, clip_id, ts, frame_path, crop_path, diff_bbox, caption, objects_json, sampling_reason)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (frame_id, clip_id, timestamp, frame_path, crop_path, diff_bbox_json, vlm_result["caption"], objects_json, sampling_reason))
 
     conn.commit()
     conn.close()

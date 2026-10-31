@@ -74,6 +74,12 @@ class Settings(BaseModel):
     movement_relative_threshold: float = Field(default=0.15, ge=0, le=1)
     tracking_max_gap_seconds: float = Field(default=30.0, gt=0)
 
+    # Milestone 2: per-query frame-check budget, temporal refinement, pan handling.
+    query_max_frame_checks: int = Field(default=32, ge=1, le=512)
+    query_refinement_max_checks: int = Field(default=4, ge=0, le=16)
+    scene_pan_min_shift_pixels: float = Field(default=10.0, ge=0)
+    scene_pan_min_response: float = Field(default=0.25, ge=0, le=1)
+
     @field_validator("spatialtrace_mode")
     @classmethod
     def _mode_ok(cls, value: str) -> str:
@@ -123,6 +129,10 @@ def load_settings() -> Settings:
         movement_min_pixels=_env_float("MOVEMENT_MIN_PIXELS", 12.0),
         movement_relative_threshold=_env_float("MOVEMENT_RELATIVE_THRESHOLD", 0.15),
         tracking_max_gap_seconds=_env_float("TRACKING_MAX_GAP_SECONDS", 30.0),
+        query_max_frame_checks=_env_int("QUERY_MAX_FRAME_CHECKS", 32),
+        query_refinement_max_checks=_env_int("QUERY_REFINEMENT_MAX_CHECKS", 4),
+        scene_pan_min_shift_pixels=_env_float("SCENE_PAN_MIN_SHIFT_PIXELS", 10.0),
+        scene_pan_min_response=_env_float("SCENE_PAN_MIN_RESPONSE", 0.25),
     )
 
 
