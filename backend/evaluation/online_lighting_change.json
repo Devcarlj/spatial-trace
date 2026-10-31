@@ -1,0 +1,26 @@
+{
+  "clip_id": "online-lighting-globe-45366",
+  "scenario": "lighting_change",
+  "split": "calibration",
+  "source": {
+    "name": "online_lighting_change.mp4",
+    "sha256": "514315c7760fc9211c17a31f94b6950fcd2cc932ab51c32d0b4cee4e2e3b550c",
+    "fps": 24.0,
+    "frame_count": 313,
+    "duration_seconds": 13.042,
+    "width": 1280,
+    "height": 720,
+    "origin_url": "https://assets.mixkit.co/videos/45366/45366-720.mp4",
+    "origin_page": "https://mixkit.co/free-stock-video/lamp/",
+    "license": "Mixkit Free License (https://mixkit.co/license/#videoFree)"
+  },
+  "label_basis": "Agent visual review of full-resolution frames at 4s and 8s plus 2s contact sheet: bulb is fixed while illumination goes dark -> bright (about 2-10s) -> dark. Dark-endpoint samples are omitted rather than labeled absent because the unlit bulb is barely visible. Boxes hand-estimated; independent human review pending.",
+  "reviewer": "agent visual review; independent human review pending",
+  "samples": [
+    {"timestamp": 4.0, "target": "light bulb", "review_status": "reviewed", "objects": [{"bbox": [215, 60, 1080, 700]}]},
+    {"timestamp": 8.0, "target": "light bulb", "review_status": "reviewed", "objects": [{"bbox": [215, 60, 1080, 700]}]}
+  ],
+  "cases": [
+    {"kind": "movement", "query": "Did the light bulb move?", "expected_movement": "stationary"}
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "clip_id": "online-similar-coins-18263",
+  "scenario": "similar_items",
+  "split": "calibration",
+  "source": {
+    "name": "online_similar_items.mp4",
+    "sha256": "f625f63ecd5f4ab60406b6c92df5b4ad8e0b6bfd252ad42374f6a74d5848bca0",
+    "fps": 24.0,
+    "frame_count": 290,
+    "duration_seconds": 12.083,
+    "width": 1920,
+    "height": 1080,
+    "origin_url": "https://assets.mixkit.co/videos/18263/18263-1080.mp4",
+    "origin_page": "https://mixkit.co/free-stock-video/coin/",
+    "license": "Mixkit Free License (https://mixkit.co/license/#videoFree)"
+  },
+  "label_basis": "Agent visual review of full-resolution frames at 0s and 12s. Many visually similar coins pass between hands, so individual coin identity is not assignable; movement for a single coin is honestly labeled unknown, not moved/stationary. Sample targets are scoped to the palm group to keep boxes exhaustive for the named group. Boxes hand-estimated; independent human review pending.",
+  "reviewer": "agent visual review; independent human review pending",
+  "samples": [
+    {"timestamp": 0.0, "target": "coin resting in the open palm", "review_status": "reviewed", "objects": [{"bbox": [915, 680, 1155, 850]}]},
+    {"timestamp": 12.0, "target": "pile of coins in the open palm", "review_status": "reviewed", "objects": [{"bbox": [780, 580, 1215, 860]}]}
+  ],
+  "cases": [
+    {"kind": "movement", "query": "Did a coin move?", "expected_movement": "unknown"}
+  ]
+}

@@ -103,6 +103,9 @@ class MockVlmProvider(VlmProvider):
             }
         ),
         "always_bad.jpg": "not-json",
+        "dark_frame.jpg": json.dumps(
+            {"objects": [], "caption": "A nearly black frame with no identifiable objects."}
+        ),
     }
     default_json = json.dumps(
         {
@@ -161,7 +164,7 @@ class LiveVlmProvider(VlmProvider):
 
     def describe_crop(self, crop_path: str) -> str:
         return responses(self.settings, self.settings.vlm_model_name,
-                         'Identify visible objects. Return only JSON: {"objects": [string], "caption": string}.',
+                         'Identify visible objects. If no object is identifiable, return an empty objects list. Return only JSON: {"objects": [string], "caption": string}.',
                          crop_path)
 
 
@@ -213,6 +216,24 @@ class ModelClient:
         payload = {"image_path": image_path, "prompt": noun_phrase}
         raw = cached_call("sam_image", payload, lambda: self.sam.segment(image_path, noun_phrase))
         return SamResponse.model_validate(raw)
+
+    def verify_attribute(self, crop_path: str, phrase: str) -> bool:
+        """Only positive, explicit visual confirmation accepts an attribute."""
+        from pydantic import BaseModel, StrictBool
+
+        class Verdict(BaseModel):
+            matches: StrictBool
+
+        if self.settings.spatialtrace_mode != "live":
+            return False
+        def call():
+            raw = responses(self.settings, self.settings.vlm_model_name,
+                            'Inspect only the central person in this crop. Does their visible clothing '
+                            'strictly match this description: ' + phrase +
+                            '? A vest is not a shirt. If unclear, occluded, too small, or a different '
+                            'garment, return false. Return only JSON {"matches": boolean}.', crop_path)
+            return Verdict.model_validate(parse_json(raw)).model_dump()
+        return Verdict.model_validate(cached_call("attribute_v1", {"crop_path": crop_path, "phrase": phrase}, call)).matches
 
     def vlm_describe(self, crop_path: str) -> VlmIndexOutput:
         payload = {"crop_path": crop_path}

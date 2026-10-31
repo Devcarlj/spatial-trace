@@ -1,0 +1,28 @@
+{
+  "clip_id": "online-tiny-coin-31100",
+  "scenario": "tiny_objects",
+  "split": "held_out",
+  "source": {
+    "name": "online_tiny_objects.mp4",
+    "sha256": "7627c8eec385ceea77399d4a2d80a06b77d95080d75aec6eb0c7632d7af4f9b2",
+    "fps": 23.976,
+    "frame_count": 479,
+    "duration_seconds": 19.978,
+    "width": 1280,
+    "height": 720,
+    "origin_url": "https://assets.mixkit.co/videos/31100/31100-720.mp4",
+    "origin_page": "https://mixkit.co/free-stock-video/coin/",
+    "license": "Mixkit Free License (https://mixkit.co/license/#videoFree)",
+    "derivation": "Trimmed to 0-20s and re-encoded with OpenCV from the 45.5s original; original file cand_coin_spin_31100.mp4 sha256 75bdda1ee597826da6247ea61cc0c9531787a067e633e5148d80eaf9a6760956"
+  },
+  "label_basis": "Agent visual review of full-resolution frames at 2s, 8s, and 14s: one small gold coin spins/travels on a dark reflective surface (reflection excluded from boxes). It does not test the capture guide's several-distances or between-keyframes appearance cases. Boxes hand-estimated; independent human review pending.",
+  "reviewer": "agent visual review; independent human review pending",
+  "samples": [
+    {"timestamp": 2.0, "target": "coin", "review_status": "reviewed", "objects": [{"bbox": [525, 305, 605, 400]}]},
+    {"timestamp": 8.0, "target": "coin", "review_status": "reviewed", "objects": [{"bbox": [435, 210, 545, 325]}]},
+    {"timestamp": 14.0, "target": "coin", "review_status": "reviewed", "objects": [{"bbox": [675, 230, 730, 350]}]}
+  ],
+  "cases": [
+    {"kind": "movement", "query": "Did the coin move?", "expected_movement": "moved"}
+  ]
+}

@@ -18,9 +18,22 @@ class IndexRequest(BaseModel):
     video_path: str = Field(min_length=1, max_length=2048)
     clip_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
 
+
+def dependency_error(exc: ImportError) -> str:
+    return (f"Backend dependency {exc.name or 'unknown'} could not load. "
+            "Start the backend with backend/run.ps1, or install backend/requirements.txt "
+            "in the Python environment running the server.")
+
+
 # Lifecycle manager to initialize DB on startup
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Health must not report success when the request pipelines cannot even load.
+    try:
+        from core.keyframer import process_video
+        from core.query_service import query_memory
+    except ImportError as exc:
+        raise RuntimeError(dependency_error(exc)) from exc
     # Initialize the SQLite schema on startup
     init_db()
     yield
@@ -54,10 +67,12 @@ def index_video(req: IndexRequest):
     """
     Sample recorded footage and index its observed regions.
     """
-    from core.keyframer import process_video
-
     try:
+        from core.keyframer import process_video
         frames = process_video(req.video_path, req.clip_id)
+    except ImportError as exc:
+        logging.exception("Indexing dependencies unavailable")
+        raise HTTPException(status_code=500, detail=dependency_error(exc)) from exc
     except ProviderUnavailable as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except (FileNotFoundError, ValueError) as exc:
@@ -75,15 +90,17 @@ def index_video(req: IndexRequest):
 @app.post("/api/query")
 def query_memory(req: QueryRequest):
     """Search indexed clips and visually verify the requested item."""
-    from core.query_service import query_memory as run_query
-
     try:
+        from core.query_service import query_memory as run_query
         result = run_query(req.query)
         if result.frame_id:
             result.frame_url = f"/api/frames/{result.frame_id}"
         for item in result.trail:
             item.frame_url = f"/api/frames/{item.frame_id}"
         return result
+    except ImportError as exc:
+        logging.exception("Query dependencies unavailable")
+        raise HTTPException(status_code=500, detail=dependency_error(exc)) from exc
     except ProviderUnavailable as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:

@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "status": "incomplete",
+  "split_policy": "Assign entire source clips to calibration or held_out before tuning. Never share neighboring frames of a source across splits.",
+  "supplemental": [{"manifest": "blue_clothing.json", "scenario": "moving outdoor camera / clothing distinction", "split": "calibration", "review": "agent sample review; human approval pending"}],
+  "required_scenarios": [
+    {"id": "static_camera", "status": "online_footage_labeled_agent_review_human_pending", "manifest": "online_static_camera.json", "split": "calibration", "source": "Mixkit Free License, see ONLINE_SOURCES.md"},
+    {"id": "handheld_pan", "status": "online_footage_labeled_agent_review_human_pending", "manifest": "online_handheld_pan.json", "split": "held_out", "source": "Mixkit Free License, see ONLINE_SOURCES.md"},
+    {"id": "lighting_change", "status": "online_footage_labeled_agent_review_human_pending", "manifest": "online_lighting_change.json", "split": "calibration", "source": "Mixkit Free License, see ONLINE_SOURCES.md"},
+    {"id": "occlusion", "status": "online_footage_labeled_agent_review_human_pending", "manifest": "online_occlusion.json", "split": "calibration", "source": "Mixkit Free License, see ONLINE_SOURCES.md"},
+    {"id": "similar_items", "status": "online_footage_labeled_agent_review_human_pending", "manifest": "online_similar_items.json", "split": "calibration", "source": "Mixkit Free License, see ONLINE_SOURCES.md"},
+    {"id": "tiny_objects", "status": "online_footage_labeled_agent_review_human_pending", "manifest": "online_tiny_objects.json", "split": "held_out", "source": "Mixkit Free License, see ONLINE_SOURCES.md"}
+  ]
+}

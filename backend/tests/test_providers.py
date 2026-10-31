@@ -60,6 +60,15 @@ def test_vlm_schema_retry_exhausted(isolated_env):
     assert client.vlm.attempts["always_bad.jpg"] == 2
 
 
+def test_vlm_describe_accepts_dark_frame_with_no_objects(isolated_env):
+    client = get_model_client()
+    result = client.vlm_describe("frames/dark_frame.jpg")
+    assert result == VlmIndexOutput(
+        objects=[], caption="A nearly black frame with no identifiable objects."
+    )
+    assert client.vlm.attempts["dark_frame.jpg"] == 1
+
+
 def test_sam_cached_call_does_not_reinvoke_provider(isolated_env):
     client = get_model_client()
     original = client.sam.segment

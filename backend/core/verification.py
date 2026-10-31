@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 import hashlib
+import re
 from pathlib import Path
 
 import cv2
@@ -85,6 +86,26 @@ def _recovery_image(image: np.ndarray, region: list[int]) -> tuple[str, tuple[in
 
 
 def verify_frame(frame, noun: str) -> list[Detection]:
+    clothing = re.fullmatch(r"(?:a )?person (?:wearing|in) (.+)", noun.strip().lower())
+    if clothing:
+        people = verify_frame(frame, "person")
+        image = cv2.imread(frame.frame_path)
+        if image is None:
+            return []
+        height, width = image.shape[:2]
+        accepted = []
+        for hit in people:
+            if hit.score < get_settings().sam_score_mid:
+                continue
+            x1, y1, x2, y2 = np.rint(hit.bbox).astype(int)
+            left, top = max(0, x1), max(0, y1)
+            right, bottom = min(width, x2), min(height, y2)
+            if right <= left or bottom <= top:
+                continue
+            path, _ = _recovery_image(image, [left, top, right-left, bottom-top])
+            if get_model_client().verify_attribute(path, clothing.group(1)):
+                accepted.append(hit)
+        return accepted
     settings = get_settings()
     image = cv2.imread(frame.frame_path) if Path(frame.frame_path).is_file() else None
     x, y, width, height = frame.diff_bbox

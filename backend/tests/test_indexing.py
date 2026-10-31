@@ -18,14 +18,56 @@ def _write_motion_clip(path):
     writer.release()
 
 
+def _write_static_clip(path, frame_count=10):
+    writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"MJPG"), 3, (96, 64))
+    assert writer.isOpened()
+    frame = np.full((64, 96, 3), 127, dtype=np.uint8)
+    for _ in range(frame_count):
+        writer.write(frame)
+    writer.release()
+
+
+def _write_alternating_clip(path, frame_count=10):
+    writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"MJPG"), 3, (96, 64))
+    assert writer.isOpened()
+    black = np.zeros((64, 96, 3), dtype=np.uint8)
+    white = np.full((64, 96, 3), 255, dtype=np.uint8)
+    for index in range(frame_count):
+        writer.write(black if index % 2 else white)
+    writer.release()
+
+
+def test_process_video_adds_periodic_full_frame_observations(isolated_env, tmp_path):
+    clip = tmp_path / "static.avi"
+    _write_static_clip(clip)
+
+    indexed = process_video(clip, "periodic-01")
+
+    assert [item["timestamp"] for item in indexed] == [0.0, 2.0]
+    assert [item["sampling_reason"] for item in indexed] == ["periodic", "periodic"]
+    assert all(item["diff_bbox"] == [0, 0, 96, 64] for item in indexed)
+
+
+def test_process_video_does_not_duplicate_periodic_scene_change_timestamps(isolated_env, tmp_path):
+    clip = tmp_path / "alternating.avi"
+    _write_alternating_clip(clip)
+    settings = get_settings()
+    settings.scene_change_threshold = 1
+    settings.scene_change_min_interval_seconds = 0.1
+
+    indexed = process_video(clip, "unique-timestamps")
+
+    timestamps = [item["timestamp"] for item in indexed]
+    assert len(timestamps) == len(set(timestamps))
+
+
 def test_process_video_persists_settled_change(isolated_env, tmp_path):
     clip = tmp_path / "motion.avi"
     _write_motion_clip(clip)
 
     indexed = process_video(clip, "desk-01")
 
-    assert len(indexed) == 1
-    result = indexed[0]
+    result = next(item for item in indexed if item["sampling_reason"] == "settled_change")
     assert result["timestamp"] == 7.0 / 3.0
     assert result["diff_bbox"]
     assert result["frame_path"].endswith("frame_7.jpg")

@@ -4,35 +4,47 @@ Index a local video and find an object in its recorded frames. FastAPI runs the
 frame sampler, vision indexing, SQLite retrieval, and SAM verification. Next.js
 proxies the API and displays pixel masks, object boxes, and associated sightings.
 
-## Run locally (two terminals)
+## Run locally
 
-Python 3.12+ and Node 20.9+ are required.
+Python 3.12+ and Node 20.9+ are required. One-time setup:
 
 ```powershell
 cd backend
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-# Copy .env.example to .env and configure MODEL_API_KEY for live mode.
-$env:SPATIALTRACE_MODE='live'
-python -m uvicorn main:app --host 127.0.0.1 --port 8000
+cd ..\frontend
+npm ci
 ```
+
+Copy `backend/.env.example` to `backend/.env`. The default mock mode needs
+no edits; set `MODEL_API_KEY` in `backend/.env` for live mode.
+
+Then, from the repository root, start everything with one command:
 
 ```powershell
-cd frontend
-npm ci
-npm run dev -- --hostname 127.0.0.1
+.\run.ps1              # or double-click run.bat
+.\run.ps1 -Mode live   # optional: use the live model APIs
 ```
 
-Open http://127.0.0.1:3000. Enter an absolute video path on the backend machine
-and a unique clip name, click **Index video**, then ask about an object.
-Existing clip names are rejected to preserve their saved evidence.
-The frontend uses same-origin `/api/index` and `/api/query`; set `BACKEND_URL`
-before launching Next.js if the backend origin differs. Model credentials stay
-on the backend. These endpoints are for trusted local use, not public hosting.
+`run.ps1` opens the backend (FastAPI on port 8000, via `backend/run.ps1`)
+and the frontend (Next.js on port 3000) in separate windows and opens
+http://127.0.0.1:3000 in your browser. Close those two windows to stop the
+servers.
 
-The local validation environment also has `backend/.deps/` with dependencies.
-Set `PYTHONPATH` to its absolute path when using that environment instead of a venv.
+Open the UI, enter an absolute video path on the backend machine and a
+unique clip name, click **Index video**, then ask about an object. Existing
+clip names are rejected to preserve their saved evidence. Model credentials
+stay on the backend; these endpoints are for trusted local use, not public
+hosting.
+
+To run the servers manually instead, start
+`python -m uvicorn main:app --host 127.0.0.1 --port 8000` in `backend/`
+(or `.\backend\run.ps1` from the root, which also picks up `backend/.deps`)
+and `npm run dev -- --hostname 127.0.0.1` in `frontend/`. If the UI says
+"The backend could not complete this request," check the backend window -
+a plain HTTP 500 can mean a missing runtime dependency; restart the backend
+with `backend/run.ps1` so the right environment is used.
 
 ## Live provider contract
 
@@ -66,13 +78,22 @@ Caches separate mode, endpoint, models, and image content.
 
 ## Behavior and limits
 
-Fixed-camera footage works best. The sampler detects a motion spike followed
-by a calm interval. If nothing settles, it indexes the final sampled full frame;
-this is a single observation, not comprehensive coverage of the video.
+Fixed-camera footage works best. The sampler saves a full frame every two seconds,
+adds significant scene changes, and detects a motion spike followed by a calm
+interval. This gives “last seen” queries temporal coverage while retaining focused
+post-motion observations. Tune the periodic interval and scene-change thresholds
+in `backend/.env`; each saved observation makes indexing slower and adds model cost.
 `FOUND_NOW` means found in saved footage, never a current camera view.
 Retrieval combines text matches with recent context from the newest matching clip,
 and falls back to recent frames when captions do not match. Up to eight candidates
 are checked by default, with five parallel workers.
+
+Last-seen questions instead verify all unique indexed timestamps in the newest
+clip. They return a latest verified sampled sighting, not an exact disappearance
+time. Explicit clip selection is not yet available. Person/clothing phrases such
+as `person wearing a blue vest` detect the person first, then visually check their
+clothing. Attribute handling is currently limited to these person phrase patterns;
+a detection score is not a calibrated probability that the attribute is correct.
 
 Tracking anchors on the latest confident detection and associates older sightings
 using masked color appearance, size, and position. Background ORB features and a
@@ -117,9 +138,11 @@ Live validation used OpenCV's public `samples/data/vtest.avi` (surveillance
 footage): `/api/index` indexed one fallback frame and `/api/query` verified a
 person with a bounding box. Model outputs can vary between calls.
 
-The original roadmap is `.agents/docs/IMPLEMENTATION_PLAN.md` (locally ignored).
-Current implementation and remaining validation are recorded in
-[implementation status](docs/IMPLEMENTATION_STATUS.md). This is still a trusted
+The tracked [roadmap](docs/IMPLEMENTATION_PLAN.md) defines priorities and completion
+criteria, superseding the old locally ignored plan under `.agents/`.
+[Implementation status](docs/IMPLEMENTATION_STATUS.md) records capabilities,
+validation, and gaps. The [evaluation guide](backend/evaluation/README.md) explains
+the initial live cases and their limitations. This is still a trusted
 local application: public deployment needs authentication, background jobs,
 retention limits, and broader resource/concurrency controls. Long model calls run
 in FastAPI's worker pool; the Next.js proxy allows up to ten minutes per request.

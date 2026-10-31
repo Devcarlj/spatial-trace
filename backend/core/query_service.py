@@ -6,6 +6,7 @@ import json
 import sqlite3
 import uuid
 import hashlib
+import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from itertools import zip_longest
@@ -105,6 +106,8 @@ def _query_memory(query: str) -> QueryResponse:
 
     client = get_model_client()
     normalized = client.normalize_query(original_query)
+    if re.search(r"\b(last time|last seen|latest appearance)\b", original_query, re.I):
+        return _last_seen(original_query, normalized)
     candidates = retrieve_frames(normalized)
     if not candidates:
         return QueryResponse(
@@ -190,3 +193,37 @@ def _query_memory(query: str) -> QueryResponse:
         frame_path=latest_frame.frame_path,
         frame_id=latest_frame.id,
     )
+
+
+def _last_seen(query: str, normalized: str) -> QueryResponse:
+    """Search the entire newest clip in reverse time, without caption filtering."""
+    init_db(get_db_path())
+    with sqlite3.connect(get_db_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        newest = conn.execute("SELECT clip_id FROM frames ORDER BY created_at DESC, rowid DESC LIMIT 1").fetchone()
+        if newest is None:
+            return QueryResponse(state="UNSURE", answer="Index a clip before searching.", query=query)
+        rows = conn.execute("SELECT * FROM frames WHERE clip_id=? ORDER BY ts DESC, rowid DESC", (newest[0],)).fetchall()
+    seen = set()
+    frames = []
+    for row in rows:
+        frame = _row_to_frame(row)
+        if frame.timestamp in seen:
+            continue
+        seen.add(frame.timestamp)
+        frames.append(frame)
+    settings = get_settings()
+    with ThreadPoolExecutor(max_workers=settings.parallel_candidate_count) as executor:
+        verified = list(executor.map(lambda frame: verify_frame(frame, normalized), frames))
+    for frame, detections in zip(frames, verified):
+        hits = [hit for hit in detections if hit.score >= settings.sam_score_high]
+        if hits:
+            hit = max(hits, key=lambda item: item.score)
+            return QueryResponse(state="FOUND_NOW", query=query, clip_id=frame.clip_id,
+                                 last_seen_seconds=frame.timestamp, frame_id=frame.id, frame_path=frame.frame_path,
+                                 bbox=hit.bbox, score=hit.score, recovered=hit.recovered,
+                                 mask_overlay=mask_overlay(hit.mask, hit.bbox), trail=[_trail_item(frame, hit)],
+                                 answer=f"Latest verified sampled sighting of {normalized}: {frame.timestamp:.2f}s into {frame.clip_id}. "
+                                        "Frames between indexed observations remain unverified; this is not an exact exit time.")
+    return QueryResponse(state="UNSURE", query=query, clip_id=newest[0],
+                         answer=f"Could not verify {normalized} in any indexed observation of the newest clip.")

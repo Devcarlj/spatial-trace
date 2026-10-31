@@ -1,0 +1,27 @@
+{
+  "clip_id": "online-occlusion-coins-47017",
+  "scenario": "occlusion",
+  "split": "calibration",
+  "source": {
+    "name": "online_occlusion.mp4",
+    "sha256": "9717e0df8f51e8a5eeaf9cf31dd9cb18ed5ee9c0018440750360785f08967e3e",
+    "fps": 23.976,
+    "frame_count": 443,
+    "duration_seconds": 18.477,
+    "width": 1280,
+    "height": 720,
+    "origin_url": "https://assets.mixkit.co/videos/47017/47017-720.mp4",
+    "origin_page": "https://mixkit.co/free-stock-video/coin/",
+    "license": "Mixkit Free License (https://mixkit.co/license/#videoFree)"
+  },
+  "label_basis": "Agent visual review of full-resolution frames at 0s, 12s, and 18s plus 2s contact sheet: calculator is clear at 0s, partly covered by falling coins roughly 2-10s, and revealed in the same position from about 12s. It is an occlusion substitute, not the capture guide's hide-then-move sequence, so no moved-after-occlusion label is claimed. Boxes hand-estimated; independent human review pending.",
+  "reviewer": "agent visual review; independent human review pending",
+  "samples": [
+    {"timestamp": 0.0, "target": "calculator", "review_status": "reviewed", "objects": [{"bbox": [255, 355, 1280, 650]}]},
+    {"timestamp": 12.0, "target": "calculator", "review_status": "reviewed", "objects": [{"bbox": [255, 355, 1280, 650]}]},
+    {"timestamp": 18.0, "target": "calculator", "review_status": "reviewed", "objects": [{"bbox": [255, 355, 1280, 650]}]}
+  ],
+  "cases": [
+    {"kind": "movement", "query": "Did the calculator move?", "expected_movement": "stationary"}
+  ]
+}

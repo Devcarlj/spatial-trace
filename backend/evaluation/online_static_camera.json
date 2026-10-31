@@ -1,0 +1,29 @@
+{
+  "clip_id": "online-static-writing-4806",
+  "scenario": "static_camera",
+  "split": "calibration",
+  "source": {
+    "name": "online_static_camera.mp4",
+    "sha256": "1b2a3350b9073186c191c72b977a09858a5e6fbbe498ccdd4ae04bec29cc55d2",
+    "fps": 29.97,
+    "frame_count": 485,
+    "duration_seconds": 16.183,
+    "width": 1920,
+    "height": 1080,
+    "origin_url": "https://assets.mixkit.co/videos/4806/4806-1080.mp4",
+    "origin_page": "https://mixkit.co/free-stock-video/young-woman-writes-a-list-on-her-work-schedule-4806/",
+    "license": "Mixkit Free License (https://mixkit.co/license/#videoFree)"
+  },
+  "label_basis": "Agent visual review of full-resolution frames at 0s, 8s, and 16s (online substitute for the desk capture: static camera, laptop stationary throughout, hand/pen are the only motion, no coffee mug present). Boxes are hand-estimated in full-frame pixels and await independent human review. This clip does not contain the capture guide's move-then-remove action, so it provides stationary/absent controls only.",
+  "reviewer": "agent visual review; independent human review pending",
+  "samples": [
+    {"timestamp": 0.0, "target": "laptop", "review_status": "reviewed", "objects": [{"bbox": [270, 470, 860, 1020]}]},
+    {"timestamp": 8.0, "target": "laptop", "review_status": "reviewed", "objects": [{"bbox": [270, 470, 860, 1020]}]},
+    {"timestamp": 16.0, "target": "laptop", "review_status": "reviewed", "objects": [{"bbox": [270, 470, 860, 1020]}]},
+    {"timestamp": 8.0, "target": "coffee mug", "review_status": "reviewed", "objects": []}
+  ],
+  "cases": [
+    {"kind": "movement", "query": "Did the laptop move?", "expected_movement": "stationary"},
+    {"query": "What is the last time there is a coffee mug?", "expected_last_seen_seconds": null}
+  ]
+}

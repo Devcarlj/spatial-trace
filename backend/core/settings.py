@@ -59,6 +59,9 @@ class Settings(BaseModel):
     settle_calm_threshold: float = 100_000.0
     settle_calm_frames: int = 6
     min_diff_area: int = 500
+    periodic_keyframe_interval_seconds: float = Field(default=2.0, gt=0, le=30)
+    scene_change_threshold: float = 2_000_000.0
+    scene_change_min_interval_seconds: float = Field(default=1.0, gt=0, le=30)
 
     sam_score_high: float = 0.80
     sam_score_mid: float = 0.40
@@ -108,6 +111,9 @@ def load_settings() -> Settings:
         settle_calm_threshold=_env_float("SETTLE_CALM_THRESHOLD", 100_000.0),
         settle_calm_frames=_env_int("SETTLE_CALM_FRAMES", 6),
         min_diff_area=_env_int("MIN_DIFF_AREA", 500),
+        periodic_keyframe_interval_seconds=_env_float("PERIODIC_KEYFRAME_INTERVAL_SECONDS", 2.0),
+        scene_change_threshold=_env_float("SCENE_CHANGE_THRESHOLD", 2_000_000.0),
+        scene_change_min_interval_seconds=_env_float("SCENE_CHANGE_MIN_INTERVAL_SECONDS", 1.0),
         sam_score_high=_env_float("SAM_SCORE_HIGH", 0.80),
         sam_score_mid=_env_float("SAM_SCORE_MID", 0.40),
         recall_frame_count=_env_int("RECALL_FRAME_COUNT", 8),

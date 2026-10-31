@@ -48,7 +48,7 @@ def _safe_clip_id(clip_id: str) -> str:
 
 
 def process_video(video_path: str | Path, clip_id: str) -> list[dict[str, Any]]:
-    """Index each post-motion settled region and return its persisted metadata."""
+    """Index periodic, scene-change, and post-motion observations from a clip."""
     from core.vlm_client import index_settled_frame
 
     settings = get_settings()
@@ -75,6 +75,31 @@ def process_video(video_path: str | Path, clip_id: str) -> list[dict[str, Any]]:
     calm_frames = 0
     indexed: list[dict[str, Any]] = []
     frame_count = 0
+    next_periodic_timestamp = 0.0
+    last_scene_change_timestamp: float | None = None
+
+    def persist(frame: np.ndarray, timestamp: float, bbox: list[int], reason: str) -> None:
+        # A periodic sample and scene-change detector can fire for the same decoded
+        # frame. One full-frame observation is enough; avoid duplicate model calls.
+        if indexed and indexed[-1]["timestamp"] == timestamp:
+            return
+        x, y, width, height = bbox
+        frame_path = output_dir / f"frame_{frame_count}.jpg"
+        crop_path = output_dir / f"crop_{frame_count}.jpg"
+        crop = frame[y : y + height, x : x + width]
+        if not cv2.imwrite(str(frame_path), frame) or not cv2.imwrite(str(crop_path), crop):
+            raise OSError("Could not write indexed frame files")
+        frame_id = index_settled_frame(safe_clip_id, timestamp, str(frame_path), str(crop_path), bbox)
+        indexed.append(
+            {
+                "frame_id": frame_id,
+                "timestamp": timestamp,
+                "frame_path": str(frame_path),
+                "crop_path": str(crop_path),
+                "diff_bbox": bbox,
+                "sampling_reason": reason,
+            }
+        )
 
     try:
         while True:
@@ -87,8 +112,22 @@ def process_video(video_path: str | Path, clip_id: str) -> list[dict[str, Any]]:
 
             small = cv2.resize(frame, (640, 360))
             gray_small = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+            timestamp = frame_count / fps
+            height, width = frame.shape[:2]
+            full_frame_bbox = [0, 0, width, height]
+
+            if timestamp >= next_periodic_timestamp:
+                persist(frame, timestamp, full_frame_bbox, "periodic")
+                while next_periodic_timestamp <= timestamp:
+                    next_periodic_timestamp += settings.periodic_keyframe_interval_seconds
+
             if prev_gray_small is not None and prev_full_frame is not None:
                 diff_score, _ = compute_diff(prev_gray_small, gray_small)
+                if (diff_score >= settings.scene_change_threshold
+                        and (last_scene_change_timestamp is None
+                             or timestamp - last_scene_change_timestamp >= settings.scene_change_min_interval_seconds)):
+                    persist(frame, timestamp, full_frame_bbox, "scene_change")
+                    last_scene_change_timestamp = timestamp
                 if diff_score > settings.settle_spike_threshold:
                     if not motion_spike:
                         pre_motion_full_frame = prev_full_frame
@@ -104,25 +143,7 @@ def process_video(video_path: str | Path, clip_id: str) -> list[dict[str, Any]]:
                         else None
                     )
                     if bbox:
-                        x, y, width, height = bbox
-                        crop = frame[y : y + height, x : x + width]
-                        timestamp = frame_count / fps
-                        frame_path = output_dir / f"frame_{frame_count}.jpg"
-                        crop_path = output_dir / f"crop_{frame_count}.jpg"
-                        if not cv2.imwrite(str(frame_path), frame) or not cv2.imwrite(str(crop_path), crop):
-                            raise OSError("Could not write detected keyframe files")
-                        frame_id = index_settled_frame(
-                            safe_clip_id, timestamp, str(frame_path), str(crop_path), bbox
-                        )
-                        indexed.append(
-                            {
-                                "frame_id": frame_id,
-                                "timestamp": timestamp,
-                                "frame_path": str(frame_path),
-                                "crop_path": str(crop_path),
-                                "diff_bbox": bbox,
-                            }
-                        )
+                        persist(frame, timestamp, bbox, "settled_change")
                     motion_spike = False
                     calm_frames = 0
 
@@ -142,7 +163,8 @@ def process_video(video_path: str | Path, clip_id: str) -> list[dict[str, Any]]:
         bbox = [0, 0, width, height]
         frame_id = index_settled_frame(safe_clip_id, timestamp, str(frame_path), str(frame_path), bbox)
         indexed.append({"frame_id": frame_id, "timestamp": timestamp,
-                        "frame_path": str(frame_path), "crop_path": str(frame_path), "diff_bbox": bbox})
+                        "frame_path": str(frame_path), "crop_path": str(frame_path), "diff_bbox": bbox,
+                        "sampling_reason": "fallback"})
     if prev_full_frame is None:
         raise ValueError("Video contains no decodable frames")
     return indexed

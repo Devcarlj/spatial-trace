@@ -4,9 +4,14 @@ from pydantic import ValidationError
 from core.contracts import SamResponse, SpatialJson, VlmIndexOutput
 
 
-def test_vlm_rejects_empty_objects():
+def test_vlm_allows_empty_objects_for_dark_or_blank_frames():
+    parsed = VlmIndexOutput(objects=[], caption="A nearly black frame.")
+    assert parsed.objects == []
+
+
+def test_vlm_still_rejects_empty_caption():
     with pytest.raises(ValidationError):
-        VlmIndexOutput(objects=[], caption="desk")
+        VlmIndexOutput(objects=[], caption="  ")
 
 
 def test_sam_rejects_malformed_box():

@@ -1,0 +1,27 @@
+{
+  "clip_id": "blue-shirt-coverage-20261030-195136",
+  "split": "calibration",
+  "source": {
+    "name": "Screen Recording 2026-10-30 195136.mp4",
+    "sha256": "1266219b271c19d646691778ac4ab8bbf4adc5ef7086ded14e74715d96a6d931",
+    "fps": 30.0,
+    "frame_count": 855,
+    "duration_seconds": 28.5
+  },
+  "label_basis": "Agent visual review of 30 source frames: every whole second from 0 through 28 plus frame 854 at 28.467s. Vest is visible at samples 1-8s; absent in reviewed later samples. Full-resolution person boxes reviewed at 4s and 8s. Shirt-negative is sample-based: distant/unclear garments and unsampled instants are not an exhaustive absence proof. Independent human review and finer exit-boundary annotation remain pending.",
+  "samples": [
+    {"timestamp": 4.0, "target": "person wearing a blue vest", "review_status": "reviewed", "objects": [{"bbox": [746, 360, 830, 568]}]},
+    {"timestamp": 8.0, "target": "person wearing a blue vest", "review_status": "reviewed", "objects": [{"bbox": [220, 290, 485, 638]}]},
+    {"timestamp": 9.0, "target": "person wearing a blue vest", "review_status": "reviewed", "objects": []},
+    {"timestamp": 8.0, "target": "person wearing a blue shirt", "review_status": "reviewed", "objects": []},
+    {"timestamp": 28.0, "target": "person wearing a blue vest", "review_status": "reviewed", "objects": []}
+  ],
+  "frames": [
+    {"timestamp": 8.0, "person_blue_vest": true, "bbox": [220, 290, 485, 638]},
+    {"timestamp": 9.0, "person_blue_vest": false}
+  ],
+  "cases": [
+    {"query": "What is the last time there is a person wearing a blue vest?", "expected_last_seen_seconds": 8.0, "tolerance_seconds": 0.34, "expected_bbox": [220, 290, 485, 638]},
+    {"query": "What is the last time there is a person wearing a blue shirt?", "expected_last_seen_seconds": null}
+  ]
+}

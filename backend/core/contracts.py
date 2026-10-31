@@ -15,11 +15,11 @@ class VlmIndexOutput(BaseModel):
 
     @field_validator("objects")
     @classmethod
-    def _non_empty_labels(cls, value: list[str]) -> list[str]:
-        cleaned = [item.strip() for item in value if item and item.strip()]
-        if not cleaned:
-            raise ValueError("objects must contain at least one label")
-        return cleaned
+    def _clean_labels(cls, value: list[str]) -> list[str]:
+        # An empty list is a valid observation: dark, blank, or occluded frames
+        # (e.g. an unlit bulb) may contain no identifiable object. Rejecting it
+        # aborted indexing of a whole clip for one legitimately empty frame.
+        return [item.strip() for item in value if item and item.strip()]
 
     @field_validator("caption")
     @classmethod
@@ -79,6 +79,8 @@ class TrailItem(BaseModel):
 
 
 class QueryResponse(BaseModel):
+    clip_id: str | None = None
+    last_seen_seconds: float | None = None
     state: QueryState
     bbox: list[float] | None = None
     mask: str | None = None

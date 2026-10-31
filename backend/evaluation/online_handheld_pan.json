@@ -1,0 +1,26 @@
+{
+  "clip_id": "online-pan-desk-101314",
+  "scenario": "handheld_pan",
+  "split": "held_out",
+  "source": {
+    "name": "online_handheld_pan.mp4",
+    "sha256": "9879d374efd518de5a59eb7202731c93e63dfe853e4eeabf1ba303d06d8c897a",
+    "fps": 23.976,
+    "frame_count": 152,
+    "duration_seconds": 6.34,
+    "width": 1920,
+    "height": 1080,
+    "origin_url": "https://assets.mixkit.co/qz3dcv4dpqssphzjl0zi11yv9ulu",
+    "origin_page": "https://mixkit.co/free-stock-video/girly-desk-with-backpack-and-supplies-101314/",
+    "license": "Mixkit Free License (https://mixkit.co/license/#videoFree)"
+  },
+  "label_basis": "Agent visual review of full-resolution frames at 0s and 4s. Smooth pan (not handheld shake) across a desk; every desk item is world-stationary while image positions shift by roughly 150px, so any moved claim is a camera-motion false positive. Clip is 6.3s, shorter than the capture guide's 15-30s target. Boxes hand-estimated; independent human review pending.",
+  "reviewer": "agent visual review; independent human review pending",
+  "samples": [
+    {"timestamp": 0.0, "target": "calculator", "review_status": "reviewed", "objects": [{"bbox": [690, 195, 1055, 525]}]},
+    {"timestamp": 4.0, "target": "calculator", "review_status": "reviewed", "objects": [{"bbox": [545, 205, 895, 540]}]}
+  ],
+  "cases": [
+    {"kind": "movement", "query": "Did the calculator move?", "expected_movement": "stationary"}
+  ]
+}
